@@ -186,6 +186,7 @@ case "$MODE" in
         STAGING="dmg-staging"
 
         # 创建 DMG 模板目录
+        rm -f "$DMG_TEMP" "$DMG_FINAL"
         rm -rf "$STAGING"
         mkdir -p "$STAGING"
         cp -R "$APP_BUNDLE" "$STAGING/"
