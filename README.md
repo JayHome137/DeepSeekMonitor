@@ -36,7 +36,7 @@ swift build -c release
 The packaged DMG is generated as:
 
 ```text
-DeepSeekMonitor-v1.1.0.dmg
+DeepSeekMonitor-v1.1.1.dmg
 ```
 
 ## Local Data

@@ -34,7 +34,7 @@ swift build -c release
 打包完成后会生成：
 
 ```text
-DeepSeekMonitor-v1.1.0.dmg
+DeepSeekMonitor-v1.1.1.dmg
 ```
 
 ## 本地数据位置
