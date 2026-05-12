@@ -24,6 +24,81 @@ info()  { echo -e "${GREEN}[INFO]${NC} $1"; }
 warn()  { echo -e "${YELLOW}[WARN]${NC} $1"; }
 error() { echo -e "${RED}[ERROR]${NC} $1"; }
 
+kill_running_app() {
+    OLD_PID=$(pgrep -x "${PROJECT_NAME}" 2>/dev/null || true)
+    if [ -n "$OLD_PID" ]; then
+        info "发现旧进程 (PID: $OLD_PID)，正在关闭..."
+        kill "$OLD_PID" 2>/dev/null || true
+        sleep 1
+        if kill -0 "$OLD_PID" 2>/dev/null; then
+            kill -9 "$OLD_PID" 2>/dev/null || true
+        fi
+        info "旧进程已关闭"
+    fi
+}
+
+copy_app_resources() {
+    APP_BUNDLE="$1"
+
+    cp "Resources/Info.plist" "${APP_BUNDLE}/Contents/"
+
+    if [ -f "Resources/deepseek-color.svg" ]; then
+        cp "Resources/deepseek-color.svg" "${APP_BUNDLE}/Contents/Resources/"
+    fi
+    if [ -f "Resources/deepseek-color.png" ]; then
+        cp "Resources/deepseek-color.png" "${APP_BUNDLE}/Contents/Resources/"
+    fi
+    if [ -f "Resources/deepseek-menu.png" ]; then
+        cp "Resources/deepseek-menu.png" "${APP_BUNDLE}/Contents/Resources/"
+    fi
+
+    if [ -f "Resources/AppIcon.icns" ]; then
+        cp "Resources/AppIcon.icns" "${APP_BUNDLE}/Contents/Resources/"
+        info "已添加 App 图标"
+    else
+        warn "未找到 Resources/AppIcon.icns，使用默认图标"
+        warn "运行 ./build.sh icon 从 SVG 生成图标"
+    fi
+}
+
+create_app_bundle() {
+    BINARY_PATH="$1"
+    APP_BUNDLE="${PROJECT_NAME}.app"
+
+    rm -rf "$APP_BUNDLE"
+    mkdir -p "${APP_BUNDLE}/Contents/MacOS"
+    mkdir -p "${APP_BUNDLE}/Contents/Resources"
+
+    cp "$BINARY_PATH" "${APP_BUNDLE}/Contents/MacOS/${PROJECT_NAME}"
+    chmod +x "${APP_BUNDLE}/Contents/MacOS/${PROJECT_NAME}"
+    copy_app_resources "$APP_BUNDLE"
+}
+
+build_release_universal() {
+    ARM_TRIPLE="arm64-apple-macosx14.0"
+    INTEL_TRIPLE="x86_64-apple-macosx14.0"
+    UNIVERSAL_DIR="${BUILD_DIR}/universal/release"
+    UNIVERSAL_BIN="${UNIVERSAL_DIR}/${PROJECT_NAME}"
+
+    info "编译 Apple Silicon 架构 (${ARM_TRIPLE})..."
+    swift build -c release --triple "$ARM_TRIPLE"
+    ARM_BIN_DIR=$(swift build -c release --triple "$ARM_TRIPLE" --show-bin-path)
+    ARM_BIN="${ARM_BIN_DIR}/${PROJECT_NAME}"
+
+    info "编译 Intel 架构 (${INTEL_TRIPLE})..."
+    swift build -c release --triple "$INTEL_TRIPLE"
+    INTEL_BIN_DIR=$(swift build -c release --triple "$INTEL_TRIPLE" --show-bin-path)
+    INTEL_BIN="${INTEL_BIN_DIR}/${PROJECT_NAME}"
+
+    mkdir -p "$UNIVERSAL_DIR"
+    info "合并 Universal Binary..."
+    lipo -create "$ARM_BIN" "$INTEL_BIN" -output "$UNIVERSAL_BIN"
+    chmod +x "$UNIVERSAL_BIN"
+    lipo -info "$UNIVERSAL_BIN"
+
+    create_app_bundle "$UNIVERSAL_BIN"
+}
+
 # 检测 Xcode 命令行工具
 if ! command -v swift &> /dev/null; then
     error "未找到 Swift 编译器。请安装 Xcode 或 Xcode Command Line Tools。"
@@ -46,60 +121,14 @@ case "$MODE" in
         ;;
 
     release)
-        info "Release 构建..."
+        info "Release Universal 构建..."
 
-        # 0. 先杀掉正在运行的旧版本
-        OLD_PID=$(pgrep -x "${PROJECT_NAME}" 2>/dev/null || true)
-        if [ -n "$OLD_PID" ]; then
-            info "发现旧进程 (PID: $OLD_PID)，正在关闭..."
-            kill "$OLD_PID" 2>/dev/null || true
-            sleep 1
-            # 如果没退出，强制杀
-            if kill -0 "$OLD_PID" 2>/dev/null; then
-                kill -9 "$OLD_PID" 2>/dev/null || true
-            fi
-            info "旧进程已关闭"
-        fi
-
-        # 1. 编译
-        swift build -c release
-
-        # 2. 创建 .app 包结构
-        APP_BUNDLE="${PROJECT_NAME}.app"
-        rm -rf "$APP_BUNDLE"
-        mkdir -p "${APP_BUNDLE}/Contents/MacOS"
-        mkdir -p "${APP_BUNDLE}/Contents/Resources"
-
-        # 3. 复制可执行文件
-        cp "${BUILD_DIR}/release/${PROJECT_NAME}" "${APP_BUNDLE}/Contents/MacOS/"
-
-        # 4. 复制 Info.plist
-        cp "Resources/Info.plist" "${APP_BUNDLE}/Contents/"
-
-        # 5. 资源文件
-        # 菜单栏图标 SVG
-        if [ -f "Resources/deepseek-color.svg" ]; then
-            cp "Resources/deepseek-color.svg" "${APP_BUNDLE}/Contents/Resources/"
-        fi
-        if [ -f "Resources/deepseek-color.png" ]; then
-            cp "Resources/deepseek-color.png" "${APP_BUNDLE}/Contents/Resources/"
-        fi
-        if [ -f "Resources/deepseek-menu.png" ]; then
-            cp "Resources/deepseek-menu.png" "${APP_BUNDLE}/Contents/Resources/"
-        fi
-
-        # App 图标（如果存在）
-        if [ -f "Resources/AppIcon.icns" ]; then
-            cp "Resources/AppIcon.icns" "${APP_BUNDLE}/Contents/Resources/"
-            info "已添加 App 图标"
-        else
-            warn "未找到 Resources/AppIcon.icns，使用默认图标"
-            warn "运行 ./build.sh icon 从 SVG 生成图标"
-        fi
+        kill_running_app
+        build_release_universal
 
         info "Release 构建完成！"
-        info "App Bundle: ${APP_BUNDLE}"
-        info "运行: open ${APP_BUNDLE}"
+        info "App Bundle: ${PROJECT_NAME}.app"
+        info "运行: open ${PROJECT_NAME}.app"
         ;;
 
     run)
@@ -180,7 +209,7 @@ case "$MODE" in
         "$0" release
 
         APP_BUNDLE="${PROJECT_NAME}.app"
-        DMG_NAME="${PROJECT_NAME}-v1.1.1"
+        DMG_NAME="${PROJECT_NAME}-v1.2.0"
         DMG_TEMP="${DMG_NAME}-temp.dmg"
         DMG_FINAL="${DMG_NAME}.dmg"
         STAGING="dmg-staging"

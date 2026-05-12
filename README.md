@@ -18,6 +18,7 @@ This project is not affiliated with DeepSeek.
 ## Requirements
 
 - macOS 14 or later.
+- Apple Silicon and Intel Mac are both supported through the packaged Universal Binary.
 - Swift 5.9 or later.
 - Xcode Command Line Tools.
 
@@ -36,7 +37,7 @@ swift build -c release
 The packaged DMG is generated as:
 
 ```text
-DeepSeekMonitor-v1.1.1.dmg
+DeepSeekMonitor-v1.2.0.dmg
 ```
 
 ## Local Data

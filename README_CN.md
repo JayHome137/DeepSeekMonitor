@@ -16,6 +16,7 @@ DeepSeek Monitor 是一个非官方 macOS 菜单栏工具，用来查看 DeepSee
 ## 环境要求
 
 - macOS 14 或更高版本。
+- 打包版本为 Universal Binary，同时支持 Apple Silicon 和 Intel Mac。
 - Swift 5.9 或更高版本。
 - Xcode Command Line Tools。
 
@@ -34,7 +35,7 @@ swift build -c release
 打包完成后会生成：
 
 ```text
-DeepSeekMonitor-v1.1.1.dmg
+DeepSeekMonitor-v1.2.0.dmg
 ```
 
 ## 本地数据位置

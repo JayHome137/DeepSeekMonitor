@@ -535,7 +535,7 @@ struct SettingsView: View {
                     Text("DeepSeek Monitor")
                         .font(.caption)
                         .foregroundStyle(.secondary)
-                    Text("版本 1.1.1")
+                    Text("版本 1.2.0")
                         .font(.caption2)
                         .foregroundStyle(.tertiary)
                 }
