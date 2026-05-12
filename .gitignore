@@ -1,0 +1,44 @@
+# Swift Package Manager
+.build/
+.swiftpm/
+Packages/
+*.swp
+*.swo
+
+# Xcode
+*.xcodeproj/
+*.xcworkspace/
+xcuserdata/
+DerivedData/
+
+# macOS
+.DS_Store
+*.app
+*.dmg
+*.xcarchive
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Build artifacts
+dmg-staging/
+release/
+dist/
+build/
+*.log
+
+# Local usage exports and imported data
+exports/
+usage-data/
+usage-export/
+*.csv
+*.zip
+
+# Local runtime/cache files
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
