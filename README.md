@@ -1,61 +1,67 @@
 # DeepSeek Monitor
 
-[中文说明](README_CN.md)
+macOS 菜单栏工具 — 实时监控 DeepSeek V4 Flash / Pro Token 消耗和消费。
 
-DeepSeek Monitor is an unofficial macOS menu bar app for viewing DeepSeek account balance and local usage trends.
+<p align="center">
+  <img src="Resources/1.png" width="360" alt="主面板" />
+  <br />
+  <em>主面板：余额 + 模型用量 + 趋势图</em>
+</p>
 
-This project is not affiliated with DeepSeek.
+## 功能
 
-## Features
+- **余额监控** — 实时显示 DeepSeek 账户余额（总余额、本月消费）
+- **Token 用量** — 按模型（V4 Flash / V4 Pro）展示 Token 消耗和费用
+- **消耗趋势** — 近 7 天 Token 消耗柱状图
+- **用量导入** — 支持从 DeepSeek Usage 页面导出 CSV 并手动/自动导入
+- **自动导出** — 通过 WKWebView 自动登录 DeepSeek 平台并触发用量导出
+- **本地缓存** — App 重启后立即显示上次数据，不白屏
 
-- Menu bar access to a compact DeepSeek usage panel.
-- Displays account balance, current-day cost, and current-month cost.
-- Parses exported DeepSeek usage CSV or ZIP files locally.
-- Supports automatic export/import workflow for usage data.
-- Shows model-level usage trends for V4 Flash and V4 Pro.
-- Keeps API Key data on the current Mac only.
+<p align="center">
+  <img src="Resources/2.png" width="420" alt="设置面板" />
+  <br />
+  <em>设置面板：API Key 配置 + 刷新间隔 + 用量导入 + 缓存管理</em>
+</p>
 
-## Requirements
+## 安装
 
-- macOS 14 or later.
-- Apple Silicon and Intel Mac are both supported through the packaged Universal Binary.
-- Swift 5.9 or later.
-- Xcode Command Line Tools.
-
-## Build
-
-```bash
-swift build -c release
-```
-
-## Package DMG
+### 从源码构建
 
 ```bash
+git clone <repo-url>
+cd DeepSeekMonitor
+
+# 生成 App 图标
+./build.sh icon
+
+# 编译并运行
+./build.sh restart
+
+# 打包 DMG
 ./build.sh dmg
 ```
 
-The packaged DMG is generated as:
+### 从 DMG 安装
 
-```text
-DeepSeekMonitor-v1.2.0.dmg
-```
+下载 `DeepSeekMonitor-v1.0.0.dmg`，将 App 拖入 Applications 文件夹。
 
-## Local Data
+## 使用
 
-API Key is stored locally through macOS preferences:
+1. 点击菜单栏 DeepSeek 图标 → 右键 **设置**
+2. 输入你的 [DeepSeek API Key](https://platform.deepseek.com/api_keys)
+3. 点击 **验证并保存**
+4. 面板自动显示余额和用量数据
 
-```text
-~/Library/Preferences/com.deepseek.monitor.plist
-```
+如果用量接口不可用，可通过设置面板中的「用量导入」从 DeepSeek Usage 页面导出 CSV 手动导入。
 
-Usage export files are processed inside the app's local Application Support folder:
+## 技术栈
 
-```text
-~/Library/Application Support/DeepSeekMonitor/usage-sync/
-```
+- **Swift 5.9+** / SwiftUI
+- **AppKit** — NSStatusBar、NSWindow、NSPanel
+- **WKWebView** — 自动导出
+- **Keychain / UserDefaults** — API Key 安全存储
+- **CSV 解析** — 自实现解析器，支持 DeepSeek 导出格式
 
-See [PRIVACY.md](PRIVACY.md) for details.
+## 许可证
 
-## License
-
-MIT License. See [LICENSE](LICENSE).
+MIT
