@@ -56,11 +56,29 @@ cd DeepSeekMonitor
 
 ## 技术栈
 
-- **Swift 5.9+** / SwiftUI
-- **AppKit** — NSStatusBar、NSWindow、NSPanel
-- **WKWebView** — 自动导出
-- **Keychain / UserDefaults** — API Key 安全存储
-- **CSV 解析** — 自实现解析器，支持 DeepSeek 导出格式
+**语言 / 框架**
+- Swift 5.9+ / SwiftUI / AppKit
+
+**桌面交互**
+- NSStatusBar 菜单栏 + NSWindow / NSPanel 浮动面板
+- NSTrackingArea 鼠标悬停检测 + 自动关闭
+
+**数据来源**
+- URLSession — DeepSeek API 余额 + 用量查询
+- WKWebView + JavaScript 注入 — DeepSeek 平台自动导出
+- 自实现 CSV 解析器 — 中英文列名、ZIP 解压、金额单位转换
+
+**状态管理**
+- Combine / ObservableObject / @Published
+- UserDefaults — LocalCache + API Key 降级
+- Security — Keychain 钥匙串存储
+
+**文件监控**
+- DispatchSourceFileSystemObject — 下载目录实时监测
+
+**构建**
+- Swift Package Manager
+- Shell 脚本 — 编译 / 图标生成 / DMG 打包
 
 ## 许可证
 
