@@ -1,33 +1,32 @@
 # Privacy
 
-DeepSeek Monitor is designed as a local macOS utility.
+DeepSeek Monitor is a local macOS utility. All data stays on your Mac unless explicitly chosen otherwise.
 
 ## API Key
 
-The API Key is stored only on the current Mac through macOS preferences:
+The API Key is stored locally via macOS UserDefaults under the key `deepseek_api_key`. The preferences domain is `com.deepseek.monitor`:
 
-```text
-~/Library/Preferences/com.deepseek.monitor.plist
 ```
-
-The preference key used by the app is:
-
-```text
-deepseek_api_key
+~/Library/Preferences/com.deepseek.monitor.plist
 ```
 
 ## Usage Data
 
-Usage CSV or ZIP exports are processed locally. The app uses this local folder for automatic import:
+Usage CSV or ZIP exports (manual import or automatic download) are processed locally. The app uses this folder for the auto-import pipeline:
 
-```text
+```
 ~/Library/Application Support/DeepSeekMonitor/usage-sync/
 ```
 
-The app parses usage files locally for display and does not send parsed usage files to a third-party service.
+- CSV parsing happens entirely on-device
+- Parsed usage data is cached in UserDefaults for display after restart
+- No usage files or parsed data are sent to any third-party service
 
 ## Network Requests
 
-The app uses the configured API Key to request DeepSeek account data from DeepSeek API endpoints.
+The app makes network requests only to:
 
-Automatic web export may open the DeepSeek platform page and interact with the export flow when enabled by the user.
+- `api.deepseek.com` — balance query (`GET /user/balance`) and usage query (`GET /v1/usage`), authenticated with the configured API Key
+- `platform.deepseek.com` — only when the user enables automatic export in settings (WKWebView-based automation)
+
+No analytics, telemetry, or third-party tracking of any kind.
