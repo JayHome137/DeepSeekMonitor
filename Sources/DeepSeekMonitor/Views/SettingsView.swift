@@ -19,6 +19,7 @@ struct SettingsView: View {
     @State private var isVerifying = false
     @State private var verifyStatus: VerifyStatus = .idle
     @State private var usageImportStatus: UsageImportStatus = .idle
+    @State private var scrollResetToken = 0
 
     // 刷新间隔选项
     private let intervalOptions: [(label: String, value: TimeInterval)] = [
@@ -29,9 +30,9 @@ struct SettingsView: View {
     ]
 
     private let panelResidenceOptions: [(label: String, value: TimeInterval)] = [
+        ("3 秒", 3),
+        ("5 秒", 5),
         ("10 秒", 10),
-        ("20 秒", 20),
-        ("30 秒", 30),
     ]
 
     private let exportIntervalOptions: [(label: String, value: TimeInterval)] = [
@@ -55,7 +56,7 @@ struct SettingsView: View {
     }
 
     var body: some View {
-        ScrollView {
+        ScrollView(.vertical) {
             VStack(alignment: .leading, spacing: 0) {
                 // ── Header ──
                 headerSection
@@ -63,6 +64,10 @@ struct SettingsView: View {
 
                 // ── API Key ──
                 apiKeySection
+                Divider().padding(.vertical, 16)
+
+                // ── Desktop Widget ──
+                desktopWidgetSection
                 Divider().padding(.vertical, 16)
 
                 // ── Refresh ──
@@ -89,7 +94,9 @@ struct SettingsView: View {
                 aboutSection
             }
             .padding(20)
+            .id(scrollResetToken)
         }
+        .defaultScrollAnchor(.top)
         .frame(width: 420, height: 620)
         .background(Theme.windowBackground(for: colorScheme))
         .onAppear {
@@ -97,6 +104,7 @@ struct SettingsView: View {
             apiKeyInput = DeepSeekService.shared.apiKey ?? ""
             verifyStatus = .idle
             usageImportStatus = .idle
+            scrollResetToken += 1
         }
     }
 
@@ -125,6 +133,23 @@ struct SettingsView: View {
     }
 
     // MARK: - API Key
+
+    private var desktopWidgetSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Label("桌面小组件", systemImage: "rectangle.on.rectangle")
+                .font(.subheadline)
+                .fontWeight(.medium)
+
+            Text("在桌面上显示一个轻量悬浮卡片，快速查看余额、当日消耗、本月消费和模型费用。")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+
+            Toggle("显示桌面小组件", isOn: $viewModel.isDesktopWidgetEnabled)
+                .toggleStyle(.switch)
+                .scaleEffect(0.8, anchor: .leading)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
 
     private var apiKeySection: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -407,6 +432,8 @@ struct SettingsView: View {
                 set: { exportAutomation.isEnabled = $0 }
             ))
             .toggleStyle(.switch)
+            .scaleEffect(0.8, anchor: .leading)
+            .frame(maxWidth: .infinity, alignment: .leading)
 
             VStack(alignment: .leading, spacing: 8) {
                 Text("自动导出频率")
@@ -535,7 +562,7 @@ struct SettingsView: View {
                     Text("DeepSeek Monitor")
                         .font(.caption)
                         .foregroundStyle(.secondary)
-                    Text("版本 1.2.0")
+                    Text("版本 1.2.1")
                         .font(.caption2)
                         .foregroundStyle(.tertiary)
                 }

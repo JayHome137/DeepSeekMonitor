@@ -9,6 +9,10 @@ struct ContentView: View {
 
     @Environment(\.colorScheme) private var colorScheme
 
+    private var panelHeight: CGFloat {
+        viewModel.hasAPIKey ? Theme.panelDashboardHeight : Theme.panelEmptyHeight
+    }
+
     var body: some View {
         ZStack {
             RoundedRectangle(cornerRadius: Theme.panelCornerRadius, style: .continuous)
@@ -31,7 +35,7 @@ struct ContentView: View {
         }
         .clipShape(RoundedRectangle(cornerRadius: Theme.panelCornerRadius, style: .continuous))
         .shadow(color: Theme.panelShadow(for: colorScheme), radius: 20, x: 0, y: 12)
-        .frame(width: Theme.panelWidth, height: Theme.panelHeight)
+        .frame(width: Theme.panelWidth, height: panelHeight)
         .background(Color.clear)
     }
 
@@ -57,52 +61,52 @@ struct ContentView: View {
                     Image(systemName: "arrow.clockwise")
                 }
             }
-            .buttonStyle(.borderless)
+            .buttonStyle(.plain)
+            .focusEffectDisabled()
             .help("刷新")
             .disabled(viewModel.isLoading || !viewModel.hasAPIKey)
 
             Button(action: onOpenSettings) {
                 Image(systemName: "gearshape")
             }
-            .buttonStyle(.borderless)
+            .buttonStyle(.plain)
+            .focusEffectDisabled()
             .help("设置")
 
             Button(action: onClose) {
                 Image(systemName: "xmark")
             }
-            .buttonStyle(.borderless)
+            .buttonStyle(.plain)
+            .focusEffectDisabled()
             .help("关闭")
         }
     }
 
     private var dashboard: some View {
-        ScrollView(.vertical, showsIndicators: false) {
-            VStack(spacing: 10) {
-                if let errorMessage = viewModel.errorMessage {
-                    statusMessage(errorMessage, systemImage: "xmark.octagon.fill", color: .red)
-                }
-
-                BalanceCardView(
-                    totalBalance: viewModel.totalBalance,
-                    currentDayCost: viewModel.currentDayCost,
-                    currentMonthCost: viewModel.currentMonthCost,
-                    isAvailable: viewModel.isAccountAvailable
-                )
-
-                UsageCardsView(
-                    flashUsage: viewModel.flashUsage,
-                    proUsage: viewModel.proUsage,
-                    isUnavailable: viewModel.isUsageUnavailable,
-                    onOpenModelDetail: onOpenModelDetail
-                )
-
-                UsageChartView(
-                    dataPoints: viewModel.chartData,
-                    totalTokens: viewModel.totalTokens,
-                    isUnavailable: viewModel.isUsageUnavailable
-                )
+        VStack(spacing: 10) {
+            if let errorMessage = viewModel.errorMessage {
+                statusMessage(errorMessage, systemImage: "xmark.octagon.fill", color: .red)
             }
-            .frame(maxWidth: .infinity, alignment: .top)
+
+            BalanceCardView(
+                totalBalance: viewModel.totalBalance,
+                currentDayCost: viewModel.currentDayCost,
+                currentMonthCost: viewModel.currentMonthCost,
+                isAvailable: viewModel.isAccountAvailable
+            )
+
+            UsageCardsView(
+                flashUsage: viewModel.flashUsage,
+                proUsage: viewModel.proUsage,
+                isUnavailable: viewModel.isUsageUnavailable,
+                onOpenModelDetail: onOpenModelDetail
+            )
+
+            UsageChartView(
+                dataPoints: viewModel.chartData,
+                totalTokens: viewModel.totalTokens,
+                isUnavailable: viewModel.isUsageUnavailable
+            )
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
     }

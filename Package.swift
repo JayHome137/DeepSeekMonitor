@@ -14,6 +14,9 @@ let package = Package(
         .executableTarget(
             name: "DeepSeekMonitor",
             path: "Sources/DeepSeekMonitor",
+            exclude: [
+                "WidgetSupport"
+            ],
             linkerSettings: [
                 .linkedFramework("Security"),
                 .linkedFramework("WebKit")
