@@ -8,10 +8,16 @@ import SwiftUI
 enum Theme {
     static let panelWidth: CGFloat = 356
     static let panelHeight: CGFloat = 500
+    static let panelDashboardHeight: CGFloat = 560
+    static let panelEmptyHeight: CGFloat = 300
     static let panelCornerRadius: CGFloat = 22
     static let panelTopGap: CGFloat = 12
     static let detailPanelWidth: CGFloat = 420
     static let detailPanelGap: CGFloat = 10
+    static let desktopWidgetWidth: CGFloat = 260
+    static let desktopWidgetHeight: CGFloat = 250
+    static let desktopWidgetGap: CGFloat = 10
+    static let desktopWidgetCornerRadius: CGFloat = panelCornerRadius
 
     // MARK: - Brand Colors
 

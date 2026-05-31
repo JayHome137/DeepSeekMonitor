@@ -66,6 +66,12 @@ final class DashboardViewModel: ObservableObject {
             UserDefaults.standard.set(normalized, forKey: "panel_residence_seconds")
         }
     }
+    /// 是否显示桌面小组件
+    @Published var isDesktopWidgetEnabled: Bool = UserDefaults.standard.bool(forKey: "desktop_widget_enabled") {
+        didSet {
+            UserDefaults.standard.set(isDesktopWidgetEnabled, forKey: "desktop_widget_enabled")
+        }
+    }
 
     // MARK: - Configuration
 
@@ -178,7 +184,7 @@ final class DashboardViewModel: ObservableObject {
     }
 
     private static func normalizedPanelResidence(_ value: TimeInterval) -> TimeInterval {
-        let allowed: [TimeInterval] = [10, 20, 30]
+        let allowed: [TimeInterval] = [3, 5, 10]
         return allowed.contains(value) ? value : 10
     }
 

@@ -14,6 +14,7 @@ final class MenuBarManager: NSObject {
     private var hoverStateTimer: Timer?
     private var isMouseInsidePanel = false
     private var isMouseInsideDetailPanel = false
+    private var lastStatusButtonScreenFrame: NSRect?
     private var cancellables = Set<AnyCancellable>()
     private var notificationObservers: [NSObjectProtocol] = []
 
@@ -25,6 +26,10 @@ final class MenuBarManager: NSObject {
 
     private lazy var modelDetailWindowController: ModelDetailWindowController = {
         ModelDetailWindowController(viewModel: viewModel)
+    }()
+
+    private lazy var desktopWidgetWindowController: DesktopWidgetWindowController = {
+        DesktopWidgetWindowController(viewModel: viewModel)
     }()
 
     // MARK: - Init
@@ -59,8 +64,6 @@ final class MenuBarManager: NSObject {
 
         addStatusMenuItem(title: "刷新", action: #selector(manualRefresh), keyEquivalent: "r")
         statusMenu.addItem(.separator())
-        addStatusMenuItem(title: "设置", action: #selector(openSettings), keyEquivalent: ",")
-        statusMenu.addItem(.separator())
         addStatusMenuItem(title: "退出", action: #selector(quitApp), keyEquivalent: "q")
     }
 
@@ -85,7 +88,7 @@ final class MenuBarManager: NSObject {
 
         panel = FloatingPanel(
             contentViewController: hostingController,
-            contentSize: NSSize(width: Theme.panelWidth, height: Theme.panelHeight)
+            contentSize: desiredPanelSize
         )
     }
 
@@ -113,8 +116,15 @@ final class MenuBarManager: NSObject {
     }
 
     private func showPanel(button: NSStatusBarButton) {
+        if let monitor = monitor {
+            NSEvent.removeMonitor(monitor)
+            self.monitor = nil
+        }
+
         if let screen = button.window?.screen ?? NSScreen.main {
+            resizePanelToMatchContent(keepingTopEdge: false)
             let buttonRect = button.window?.convertToScreen(button.convert(button.bounds, to: nil)) ?? .zero
+            lastStatusButtonScreenFrame = buttonRect
 
             var origin = NSPoint(
                 x: buttonRect.midX - panel.frame.width / 2,
@@ -211,8 +221,27 @@ final class MenuBarManager: NSObject {
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in
                 self?.refreshStatusBarText()
+                Task { @MainActor [weak self] in
+                    self?.resizePanelToMatchContent(keepingTopEdge: true)
+                }
             }
             .store(in: &cancellables)
+
+        viewModel.$isDesktopWidgetEnabled
+            .removeDuplicates()
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] isEnabled in
+                if isEnabled {
+                    self?.showDesktopWidget()
+                } else {
+                    self?.desktopWidgetWindowController.close()
+                }
+            }
+            .store(in: &cancellables)
+
+        if viewModel.isDesktopWidgetEnabled {
+            showDesktopWidget()
+        }
     }
 
     private func refreshStatusBarText() {
@@ -259,7 +288,29 @@ final class MenuBarManager: NSObject {
     func stopAutoRefresh() { viewModel.stopAutoRefresh() }
 
     @objc private func manualRefresh() { Task { await viewModel.refresh() } }
-    @objc private func openSettings() { settingsWindowController.show(anchorTo: panel.isVisible ? panel : nil) }
+    @objc private func openSettings() {
+        presentSettingsWindow()
+    }
+
+    private func presentSettingsWindow() {
+        if panel.isVisible {
+            let frame = panel.frame
+            let screen = panel.screen ?? NSScreen.main
+            closePanel()
+            settingsWindowController.show(anchorFrame: frame, screen: screen)
+            return
+        }
+
+        if let button = statusItem.button,
+           let buttonWindow = button.window {
+            let frame = buttonWindow.convertToScreen(button.convert(button.bounds, to: nil))
+            lastStatusButtonScreenFrame = frame
+            settingsWindowController.show(anchorFrame: frame, screen: buttonWindow.screen ?? NSScreen.main)
+            return
+        }
+
+        settingsWindowController.show(anchorFrame: lastStatusButtonScreenFrame, screen: NSScreen.main)
+    }
     private func openModelDetail(_ model: DeepSeekModel) {
         guard panel.isVisible else { return }
         modelDetailWindowController.show(for: model, anchoredTo: panel)
@@ -270,6 +321,7 @@ final class MenuBarManager: NSObject {
         stopAutoRefresh()
         UsageExportAutomationService.shared.stop()
         UsageExportAutomationService.shared.closeWindow()
+        desktopWidgetWindowController.close()
         closePanel()
         modelDetailWindowController.close()
         if let monitor = monitor { NSEvent.removeMonitor(monitor) }
@@ -284,6 +336,37 @@ final class MenuBarManager: NSObject {
             button.target = nil
         }
         NSStatusBar.system.removeStatusItem(statusItem)
+    }
+}
+
+private extension MenuBarManager {
+    var desiredPanelSize: NSSize {
+        NSSize(
+            width: Theme.panelWidth,
+            height: viewModel.hasAPIKey ? Theme.panelDashboardHeight : Theme.panelEmptyHeight
+        )
+    }
+
+    func resizePanelToMatchContent(keepingTopEdge: Bool) {
+        guard panel != nil else { return }
+        let newSize = desiredPanelSize
+        guard panel.frame.size != newSize else { return }
+
+        let oldFrame = panel.frame
+        var newOrigin = oldFrame.origin
+        if keepingTopEdge {
+            newOrigin.y = oldFrame.maxY - newSize.height
+        }
+
+        panel.setFrame(NSRect(origin: newOrigin, size: newSize), display: true, animate: panel.isVisible)
+    }
+
+    func showDesktopWidget() {
+        if panel.isVisible {
+            desktopWidgetWindowController.show(leftOf: panel.frame, on: panel.screen)
+        } else {
+            desktopWidgetWindowController.show()
+        }
     }
 }
 
@@ -319,4 +402,7 @@ private final class FloatingPanel: NSWindow {
         self.titlebarAppearsTransparent = true
         self.hidesOnDeactivate = false
     }
+
+    override var canBecomeKey: Bool { true }
+    override var canBecomeMain: Bool { true }
 }
