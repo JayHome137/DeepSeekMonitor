@@ -203,3 +203,17 @@ func formatNumber(_ number: Int) -> String {
     formatter.numberStyle = .decimal
     return formatter.string(from: NSNumber(value: number)) ?? "\(number)"
 }
+
+// MARK: - Widget Snapshot (shared with Widget Extension via App Group)
+
+struct WidgetSnapshot: Codable {
+    let totalBalance: Double
+    let isAccountAvailable: Bool
+    let currentDayCost: Double
+    let currentMonthCost: Double
+    let flashTotalTokens: Int
+    let flashCostInCents: Int
+    let proTotalTokens: Int
+    let proCostInCents: Int
+    let lastUpdated: Date
+}

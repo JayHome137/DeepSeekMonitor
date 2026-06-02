@@ -4,8 +4,13 @@ import SwiftUI
 @MainActor
 final class DesktopWidgetWindowController {
     private var window: DesktopWidgetWindow?
+    // Exposed for MenuBarManager to position detail panel
+    var widgetWindow: NSWindow? { window }
+
     private let viewModel: DashboardViewModel
     private let frameKey = "desktop_widget_frame"
+
+    var onTapModel: ((DeepSeekModel) -> Void)?
 
     init(viewModel: DashboardViewModel) {
         self.viewModel = viewModel
@@ -22,25 +27,28 @@ final class DesktopWidgetWindowController {
             return
         }
 
-        let hostingController = NSHostingController(rootView: DesktopWidgetView(viewModel: viewModel))
+        let widgetView = DesktopWidgetView(
+            viewModel: viewModel,
+            onTapModel: { [weak self] model in
+                self?.onTapModel?(model)
+            }
+        )
+
+        let hostingController = NSHostingController(rootView: widgetView)
         hostingController.view.wantsLayer = true
         hostingController.view.layer?.backgroundColor = NSColor.clear.cgColor
 
         let window = DesktopWidgetWindow(contentViewController: hostingController)
         position(window, leftOf: anchorFrame, on: screen)
         self.window = window
-        window.onClose = { [weak self] in
-            self?.saveFrame(window.frame)
-            self?.window = nil
-        }
         window.orderFront(nil)
     }
 
     func close() {
         if let window {
             saveFrame(window.frame)
+            window.close()
         }
-        window?.close()
         window = nil
     }
 
@@ -59,17 +67,11 @@ final class DesktopWidgetWindowController {
                 x: anchorFrame.minX - size.width - Theme.desktopWidgetGap,
                 y: anchorFrame.maxY - size.height
             )
-
-            if origin.x < visibleFrame.minX + 8 {
-                origin.x = visibleFrame.minX + 8
-            }
-            if origin.y < visibleFrame.minY + 8 {
-                origin.y = visibleFrame.minY + 8
-            }
+            if origin.x < visibleFrame.minX + 8 { origin.x = visibleFrame.minX + 8 }
+            if origin.y < visibleFrame.minY + 8 { origin.y = visibleFrame.minY + 8 }
             if origin.y + size.height > visibleFrame.maxY - 8 {
                 origin.y = visibleFrame.maxY - size.height - 8
             }
-
             window.setFrameOrigin(origin)
             return
         }
@@ -78,7 +80,6 @@ final class DesktopWidgetWindowController {
             window.center()
             return
         }
-
         window.setFrameOrigin(NSPoint(
             x: visibleFrame.maxX - size.width - 24,
             y: visibleFrame.maxY - size.height - 52
@@ -86,10 +87,7 @@ final class DesktopWidgetWindowController {
     }
 
     private func visibleFrame(containing frame: NSRect, fallback screen: NSScreen?) -> NSRect? {
-        if let screen, screen.frame.intersects(frame) {
-            return screen.visibleFrame
-        }
-
+        if let screen, screen.frame.intersects(frame) { return screen.visibleFrame }
         return NSScreen.screens.first { $0.frame.intersects(frame) }?.visibleFrame
             ?? NSScreen.main?.visibleFrame
     }
@@ -107,15 +105,13 @@ final class DesktopWidgetWindowController {
 }
 
 private final class DesktopWidgetWindow: NSPanel {
-    var onClose: (() -> Void)?
-
     init(contentViewController: NSViewController) {
         super.init(
             contentRect: NSRect(
                 origin: .zero,
                 size: NSSize(width: Theme.desktopWidgetWidth, height: Theme.desktopWidgetHeight)
             ),
-            styleMask: [.borderless, .fullSizeContentView, .nonactivatingPanel],
+            styleMask: [.borderless, .fullSizeContentView],
             backing: .buffered,
             defer: false
         )
@@ -140,11 +136,6 @@ private final class DesktopWidgetWindow: NSPanel {
         self.isMovableByWindowBackground = true
     }
 
-    override var canBecomeKey: Bool { false }
-    override var canBecomeMain: Bool { false }
-
-    override func close() {
-        super.close()
-        onClose?()
-    }
+    override var canBecomeKey: Bool { true }
+    override var canBecomeMain: Bool { true }
 }
