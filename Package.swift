@@ -14,12 +14,21 @@ let package = Package(
         .executableTarget(
             name: "DeepSeekMonitor",
             path: "Sources/DeepSeekMonitor",
-            exclude: [
-                "WidgetSupport"
-            ],
             linkerSettings: [
                 .linkedFramework("Security"),
+                .linkedFramework("WidgetKit"),
                 .linkedFramework("WebKit")
+            ]
+        ),
+        .executableTarget(
+            name: "WidgetSupport",
+            dependencies: [],
+            path: "Sources/WidgetSupport",
+            exclude: ["Info.plist"],
+            linkerSettings: [
+                .linkedFramework("WidgetKit"),
+                .linkedFramework("SwiftUI"),
+                .linkedFramework("Foundation")
             ]
         )
     ]

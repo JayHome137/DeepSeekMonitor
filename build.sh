@@ -13,6 +13,8 @@ set -e
 
 PROJECT_NAME="DeepSeekMonitor"
 BUILD_DIR=".build"
+WIDGET_NAME="WidgetSupport"
+WIDGET_APPEX="WidgetSupport.appex"
 
 # 颜色输出
 RED='\033[0;31m'
@@ -23,6 +25,16 @@ NC='\033[0m' # No Color
 info()  { echo -e "${GREEN}[INFO]${NC} $1"; }
 warn()  { echo -e "${YELLOW}[WARN]${NC} $1"; }
 error() { echo -e "${RED}[ERROR]${NC} $1"; }
+
+increment_build() {
+    local plist="Resources/Info.plist"
+    local widget_plist="Sources/WidgetSupport/Info.plist"
+    local current=$(/usr/libexec/PlistBuddy -c "Print CFBundleVersion" "$plist" 2>/dev/null || echo "1")
+    local next=$((current + 1))
+    /usr/libexec/PlistBuddy -c "Set CFBundleVersion $next" "$plist" 2>/dev/null || true
+    /usr/libexec/PlistBuddy -c "Set CFBundleVersion $next" "$widget_plist" 2>/dev/null || true
+    info "Build 版本号: $next"
+}
 
 kill_running_app() {
     OLD_PID=$(pgrep -x "${PROJECT_NAME}" 2>/dev/null || true)
@@ -61,6 +73,48 @@ copy_app_resources() {
     fi
 }
 
+embed_widget_extension() {
+    APP_BUNDLE="$1"
+    WIDGET_BINARY="$2"
+    APPEX_DIR="${APP_BUNDLE}/Contents/PlugIns/${WIDGET_APPEX}"
+
+    mkdir -p "${APPEX_DIR}/Contents/MacOS"
+
+    cp "$WIDGET_BINARY" "${APPEX_DIR}/Contents/MacOS/${WIDGET_NAME}"
+    chmod +x "${APPEX_DIR}/Contents/MacOS/${WIDGET_NAME}"
+
+    if [ -f "Sources/WidgetSupport/Info.plist" ]; then
+        cp "Sources/WidgetSupport/Info.plist" "${APPEX_DIR}/Contents/"
+    fi
+
+    info "已嵌入 Widget Extension: ${WIDGET_APPEX}"
+}
+
+sign_bundle() {
+    APP_BUNDLE="$1"
+    ENTITLEMENTS="DeepSeekMonitor.entitlements"
+
+    if [ ! -f "$ENTITLEMENTS" ]; then
+        warn "未找到 Entitlements 文件 ($ENTITLEMENTS)，跳过签名"
+        return
+    fi
+
+    APPEX_DIR="${APP_BUNDLE}/Contents/PlugIns/${WIDGET_APPEX}"
+
+    if [ -d "$APPEX_DIR" ]; then
+        info "签名 Widget Extension..."
+        codesign --force --sign - --entitlements "$ENTITLEMENTS" "$APPEX_DIR" 2>/dev/null || \
+            warn "Widget Extension 签名失败（非致命）"
+    fi
+
+    info "签名主 App..."
+    codesign --force --sign - --entitlements "$ENTITLEMENTS" \
+        "${APP_BUNDLE}/Contents/MacOS/${PROJECT_NAME}" 2>/dev/null || \
+        warn "主 App 签名失败（非致命）"
+
+    info "签名完成（ad-hoc）"
+}
+
 create_app_bundle() {
     BINARY_PATH="$1"
     APP_BUNDLE="${PROJECT_NAME}.app"
@@ -96,7 +150,35 @@ build_release_universal() {
     chmod +x "$UNIVERSAL_BIN"
     lipo -info "$UNIVERSAL_BIN"
 
+    # Widget Extension
+    info "编译 Widget Extension (${ARM_TRIPLE})..."
+    swift build -c release --target "${WIDGET_NAME}" --triple "$ARM_TRIPLE" 2>/dev/null || true
+    ARM_WIDGET_DIR=$(swift build -c release --target "${WIDGET_NAME}" --triple "$ARM_TRIPLE" --show-bin-path 2>/dev/null || echo "")
+    ARM_WIDGET="${ARM_WIDGET_DIR}/${WIDGET_NAME}"
+
+    info "编译 Widget Extension (${INTEL_TRIPLE})..."
+    swift build -c release --target "${WIDGET_NAME}" --triple "$INTEL_TRIPLE" 2>/dev/null || true
+    INTEL_WIDGET_DIR=$(swift build -c release --target "${WIDGET_NAME}" --triple "$INTEL_TRIPLE" --show-bin-path 2>/dev/null || echo "")
+    INTEL_WIDGET="${INTEL_WIDGET_DIR}/${WIDGET_NAME}"
+
+    WIDGET_UNIVERSAL="${UNIVERSAL_DIR}/${WIDGET_NAME}"
+    if [ -n "$ARM_WIDGET" ] && [ -f "$ARM_WIDGET" ] && [ -n "$INTEL_WIDGET" ] && [ -f "$INTEL_WIDGET" ]; then
+        info "合并 Widget Universal Binary..."
+        lipo -create "$ARM_WIDGET" "$INTEL_WIDGET" -output "$WIDGET_UNIVERSAL" 2>/dev/null || true
+        chmod +x "$WIDGET_UNIVERSAL" 2>/dev/null || true
+    else
+        warn "Widget Extension 编译不完整，尝试单一架构..."
+        if [ -f "$ARM_WIDGET" ]; then
+            cp "$ARM_WIDGET" "${UNIVERSAL_DIR}/${WIDGET_NAME}"
+        fi
+    fi
+
     create_app_bundle "$UNIVERSAL_BIN"
+
+    if [ -f "${UNIVERSAL_DIR}/${WIDGET_NAME}" ]; then
+        embed_widget_extension "${PROJECT_NAME}.app" "${UNIVERSAL_DIR}/${WIDGET_NAME}"
+    fi
+    sign_bundle "${PROJECT_NAME}.app"
 }
 
 # 检测 Xcode 命令行工具
@@ -115,13 +197,16 @@ MODE="${1:-release}"
 
 case "$MODE" in
     debug)
+        increment_build
         info "Debug 构建..."
         swift build -c debug
+        swift build -c debug --target "${WIDGET_NAME}" 2>/dev/null || true
         info "Debug 构建完成！可执行文件: ${BUILD_DIR}/debug/${PROJECT_NAME}"
         ;;
 
     release)
         info "Release Universal 构建..."
+        increment_build
 
         kill_running_app
         build_release_universal
@@ -133,12 +218,12 @@ case "$MODE" in
 
     run)
         info "构建并运行..."
+        increment_build
 
         swift build -c debug
+        swift build -c debug --target "${WIDGET_NAME}" 2>/dev/null || true
         APP_PATH="${BUILD_DIR}/debug/${PROJECT_NAME}"
 
-        # Debug 模式下直接运行二进制文件
-        # （注意：因为没有 Info.plist 会显示 Dock 图标，用于调试）
         info "启动 ${PROJECT_NAME}..."
         "${APP_PATH}" &
         ;;
@@ -154,7 +239,6 @@ case "$MODE" in
             exit 1
         fi
 
-        # 检查 rsvg-convert (librsvg)
         if ! command -v rsvg-convert &> /dev/null; then
             warn "未安装 rsvg-convert，尝试用 Homebrew 安装..."
             brew install librsvg 2>/dev/null || {
@@ -164,16 +248,12 @@ case "$MODE" in
             }
         fi
 
-        # 创建 iconset 目录
         rm -rf "$ICONSET"
         mkdir -p "$ICONSET"
 
-        # 生成各种尺寸的 PNG
         for size in 16 32 64 128 256 512 1024; do
             rsvg-convert "$SVG_FILE" -w $size -h $size \
                 -o "${ICONSET}/icon_${size}x${size}.png"
-
-            # 如果尺寸需要 @2x
             if [ $size -le 512 ]; then
                 half=$((size / 2))
                 if [ $half -ge 16 ]; then
@@ -183,7 +263,6 @@ case "$MODE" in
             fi
         done
 
-        # 用 iconutil 生成 .icns
         iconutil -c icns "$ICONSET" -o "$ICNS_FILE"
         rm -rf "$ICONSET"
 
@@ -196,33 +275,27 @@ case "$MODE" in
         ;;
 
     restart)
-        # 构建 + 自动重启
         "$0" release
         open "${PROJECT_NAME}.app"
         info "已启动 ${PROJECT_NAME}.app"
         ;;
 
     dmg)
-        # 构建 + 生成 DMG 安装包
         info "生成 DMG 安装包..."
-
         "$0" release
 
         APP_BUNDLE="${PROJECT_NAME}.app"
-        DMG_NAME="${PROJECT_NAME}-v1.2.1"
+        DMG_NAME="${PROJECT_NAME}-v1.3.0"
         DMG_TEMP="${DMG_NAME}-temp.dmg"
         DMG_FINAL="${DMG_NAME}.dmg"
         STAGING="dmg-staging"
 
-        # 创建 DMG 模板目录
         rm -f "$DMG_TEMP" "$DMG_FINAL"
         rm -rf "$STAGING"
         mkdir -p "$STAGING"
         cp -R "$APP_BUNDLE" "$STAGING/"
-        # 创建 Applications 快捷方式
         ln -s /Applications "$STAGING/Applications"
 
-        # 生成 DMG（精简格式）
         hdiutil create \
             -volname "DeepSeek Monitor" \
             -srcfolder "$STAGING" \
@@ -231,7 +304,6 @@ case "$MODE" in
             -size 64m \
             "$DMG_TEMP"
 
-        # 转换最终格式
         hdiutil convert "$DMG_TEMP" -format UDZO -imagekey zlib-level=9 -o "$DMG_FINAL"
         rm -f "$DMG_TEMP"
         rm -rf "$STAGING"
