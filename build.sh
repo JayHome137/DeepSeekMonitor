@@ -285,7 +285,7 @@ case "$MODE" in
         "$0" release
 
         APP_BUNDLE="${PROJECT_NAME}.app"
-        DMG_NAME="${PROJECT_NAME}-v1.3.1"
+        DMG_NAME="${PROJECT_NAME}-v1.3.0"
         DMG_TEMP="${DMG_NAME}-temp.dmg"
         DMG_FINAL="${DMG_NAME}.dmg"
         STAGING="dmg-staging"

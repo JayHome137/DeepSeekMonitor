@@ -32,10 +32,12 @@ final class SettingsWindowController: NSObject {
         let window = SettingsPanel(contentViewController: hostingController)
         window.title = "设置"
         window.setContentSize(NSSize(width: 420, height: 660))
-        window.styleMask = [.borderless, .fullSizeContentView]
+        window.styleMask = [.titled, .closable, .miniaturizable, .fullSizeContentView]
         window.isReleasedWhenClosed = false
         window.isOpaque = false
         window.backgroundColor = NSColor.clear
+        window.titlebarAppearsTransparent = true
+        window.titleVisibility = .hidden
         window.hasShadow = true
         window.isMovableByWindowBackground = true
         position(window, nextTo: anchorWindow)
