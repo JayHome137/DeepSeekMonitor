@@ -35,9 +35,9 @@ final class SettingsWindowController: NSObject {
         window.styleMask = [.titled, .closable, .miniaturizable]
         window.isReleasedWhenClosed = false
         window.isOpaque = false
-        window.backgroundColor = NSColor.windowBackgroundColor.withAlphaComponent(0.78)
+        window.backgroundColor = NSColor.clear
         window.hasShadow = true
-        window.titlebarAppearsTransparent = false
+        window.titlebarAppearsTransparent = true
         window.titleVisibility = .hidden
         window.isMovableByWindowBackground = false
         position(window, nextTo: anchorWindow)

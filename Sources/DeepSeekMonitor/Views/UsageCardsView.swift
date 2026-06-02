@@ -116,10 +116,10 @@ private struct UsageCardRow: View {
                 }
             }
             .padding(12)
-            .background(Theme.cardBackground(for: colorScheme))
+            .background(.regularMaterial)
             .clipShape(RoundedRectangle(cornerRadius: 12))
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.borderless)
         .disabled(usage == nil)
     }
 
