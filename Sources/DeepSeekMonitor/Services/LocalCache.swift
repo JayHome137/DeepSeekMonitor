@@ -1,4 +1,5 @@
 import Foundation
+import WidgetKit
 
 // MARK: - Local Cache
 //
@@ -26,6 +27,9 @@ final class LocalCache {
     func saveDashboard(_ dashboard: DashboardCache) {
         guard let data = try? encoder.encode(dashboard) else { return }
         defaults.set(data, forKey: Keys.dashboard)
+
+        // 同步写入 App Group 供 Widget Extension 消费
+        saveWidgetSnapshot(from: dashboard)
     }
 
     /// 读取缓存的 Dashboard 快照
@@ -56,6 +60,29 @@ final class LocalCache {
     func clearAll() {
         defaults.removeObject(forKey: Keys.dashboard)
         defaults.removeObject(forKey: Keys.usageHistory)
+    }
+
+    // MARK: - Widget Snapshot
+
+    /// 写入 Widget 快照到 App Group 共享容器
+    private func saveWidgetSnapshot(from dashboard: DashboardCache) {
+        let snapshot = WidgetSnapshot(
+            totalBalance: dashboard.totalBalance,
+            isAccountAvailable: dashboard.isAccountAvailable,
+            currentDayCost: dashboard.currentDayCost,
+            currentMonthCost: dashboard.currentMonthCost,
+            flashTotalTokens: dashboard.flashTotalTokens,
+            flashCostInCents: dashboard.flashCostInCents,
+            proTotalTokens: dashboard.proTotalTokens,
+            proCostInCents: dashboard.proCostInCents,
+            lastUpdated: dashboard.lastUpdated
+        )
+
+        guard let sharedDefaults = UserDefaults(suiteName: "group.com.deepseek.monitor"),
+              let snapshotData = try? encoder.encode(snapshot) else { return }
+
+        sharedDefaults.set(snapshotData, forKey: "widget_snapshot")
+        WidgetCenter.shared.reloadAllTimelines()
     }
 }
 

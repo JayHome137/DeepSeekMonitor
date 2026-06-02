@@ -1,6 +1,7 @@
 import SwiftUI
 import AppKit
 import UniformTypeIdentifiers
+import ServiceManagement
 
 // MARK: - Settings View
 //
@@ -20,6 +21,7 @@ struct SettingsView: View {
     @State private var verifyStatus: VerifyStatus = .idle
     @State private var usageImportStatus: UsageImportStatus = .idle
     @State private var scrollResetToken = 0
+    @State private var isLaunchAtLogin = false
 
     // 刷新间隔选项
     private let intervalOptions: [(label: String, value: TimeInterval)] = [
@@ -70,6 +72,11 @@ struct SettingsView: View {
                 desktopWidgetSection
                 Divider().padding(.vertical, 16)
 
+                // ── Launch at Login ──
+                launchAtLoginSection
+                Divider().padding(.vertical, 16)
+
+
                 // ── Refresh ──
                 refreshIntervalSection
                 Divider().padding(.vertical, 16)
@@ -98,12 +105,13 @@ struct SettingsView: View {
         }
         .defaultScrollAnchor(.top)
         .frame(width: 420, height: 620)
-        .background(Theme.windowBackground(for: colorScheme))
+        .background(.ultraThinMaterial)
         .onAppear {
             // 重新打开设置时回填已保存的 Key，避免重复输入
             apiKeyInput = DeepSeekService.shared.apiKey ?? ""
             verifyStatus = .idle
             usageImportStatus = .idle
+            isLaunchAtLogin = SMAppService.mainApp.status == .enabled
             scrollResetToken += 1
         }
     }
@@ -129,6 +137,15 @@ struct SettingsView: View {
             }
 
             Spacer()
+
+            Button(action: {
+                NSApp.keyWindow?.close()
+            }) {
+                Image(systemName: "xmark")
+            }
+            .buttonStyle(.plain)
+            .focusEffectDisabled()
+            .help("关闭")
         }
     }
 
@@ -148,6 +165,37 @@ struct SettingsView: View {
                 .toggleStyle(.switch)
                 .scaleEffect(0.8, anchor: .leading)
                 .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+
+    private var launchAtLoginSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Label("开机自启", systemImage: "power")
+                .font(.subheadline)
+                .fontWeight(.medium)
+
+            Text("开启后，每次登录 Mac 时自动启动 DeepSeek Monitor，确保桌面小组件数据保持最新。")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+
+            Toggle("登录时自动启动", isOn: Binding(
+                get: { isLaunchAtLogin },
+                set: { newValue in
+                    isLaunchAtLogin = newValue
+                    do {
+                        if newValue {
+                            try SMAppService.mainApp.register()
+                        } else {
+                            try SMAppService.mainApp.unregister()
+                        }
+                    } catch {
+                        isLaunchAtLogin = SMAppService.mainApp.status == .enabled
+                    }
+                }
+            ))
+            .toggleStyle(.switch)
+            .scaleEffect(0.8, anchor: .leading)
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
 
@@ -562,7 +610,7 @@ struct SettingsView: View {
                     Text("DeepSeek Monitor")
                         .font(.caption)
                         .foregroundStyle(.secondary)
-                    Text("版本 1.2.1")
+                    Text("版本 1.3.1")
                         .font(.caption2)
                         .foregroundStyle(.tertiary)
                 }
