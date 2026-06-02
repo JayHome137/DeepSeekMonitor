@@ -19,7 +19,7 @@ struct DeepSeekMonitorApp: App {
 
 @MainActor
 class AppDelegate: NSObject, NSApplicationDelegate {
-    private var menuBarManager: MenuBarManager?
+    private(set) var menuBarManager: MenuBarManager?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         // 初始化菜单栏管理器
@@ -43,6 +43,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationWillTerminate(_ notification: Notification) {
         menuBarManager?.cleanup()
         NSWorkspace.shared.notificationCenter.removeObserver(self)
+    }
+
+    // MARK: - URL Scheme
+
+    func application(_ application: NSApplication, open urls: [URL]) {
+        guard let url = urls.first, url.scheme == "deepseekmonitor" else { return }
+        menuBarManager?.handleDeepLink(url: url)
     }
 
     // MARK: - System Events

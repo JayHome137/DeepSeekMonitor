@@ -51,8 +51,8 @@ final class ModelDetailWindowController: NSObject {
         panel.backgroundColor = .clear
         panel.hasShadow = true
         panel.isReleasedWhenClosed = false
-        panel.level = .statusBar
-        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .transient]
+        panel.level = .normal
+        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         panel.hidesOnDeactivate = false
         panel.contentView?.wantsLayer = true
         panel.contentView?.layer?.cornerRadius = Theme.panelCornerRadius
@@ -72,26 +72,36 @@ final class ModelDetailWindowController: NSObject {
     }
 
     private func layout(panel: NSPanel, nextTo anchorWindow: NSWindow) {
+        layout(panel: panel, anchoredTo: anchorWindow.frame, screen: anchorWindow.screen)
+    }
+
+    private func layout(panel: NSPanel, anchoredTo anchorFrame: NSRect, screen: NSScreen?) {
         panel.setContentSize(NSSize(width: Theme.detailPanelWidth, height: Theme.panelHeight))
 
-        guard let screen = anchorWindow.screen ?? NSScreen.main else { return }
-        let anchorFrame = anchorWindow.frame
+        guard let screen = screen ?? NSScreen.main else { return }
 
+        // Position to the right of anchor, centered vertically
         var origin = NSPoint(
             x: anchorFrame.maxX + Theme.detailPanelGap,
-            y: anchorFrame.maxY - Theme.panelHeight
+            y: anchorFrame.midY - Theme.panelHeight / 2
         )
 
+        // If no room on right, try left
         if origin.x + Theme.detailPanelWidth > screen.visibleFrame.maxX - 6 {
             origin.x = anchorFrame.minX - Theme.detailPanelWidth - Theme.detailPanelGap
         }
 
+        // If no room on either side, center on screen
         if origin.x < screen.visibleFrame.minX + 6 {
             origin.x = max(screen.visibleFrame.minX + 6, anchorFrame.midX - Theme.detailPanelWidth / 2)
         }
 
+        // Clamp vertical position
         if origin.y < screen.visibleFrame.minY + 6 {
             origin.y = screen.visibleFrame.minY + 6
+        }
+        if origin.y + Theme.panelHeight > screen.visibleFrame.maxY - 6 {
+            origin.y = screen.visibleFrame.maxY - Theme.panelHeight - 6
         }
 
         panel.setFrameOrigin(origin)

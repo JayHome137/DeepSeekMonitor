@@ -16,7 +16,7 @@ struct ContentView: View {
     var body: some View {
         ZStack {
             RoundedRectangle(cornerRadius: Theme.panelCornerRadius, style: .continuous)
-                .fill(Theme.windowBackground(for: colorScheme))
+                .fill(.ultraThinMaterial)
                 .overlay {
                     RoundedRectangle(cornerRadius: Theme.panelCornerRadius, style: .continuous)
                         .strokeBorder(Theme.panelBorder(for: colorScheme), lineWidth: 1)

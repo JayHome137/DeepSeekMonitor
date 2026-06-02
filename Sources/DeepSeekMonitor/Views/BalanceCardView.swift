@@ -47,7 +47,7 @@ struct BalanceCardView: View {
             }
         }
         .padding(14)
-        .background(Theme.cardBackground(for: colorScheme))
+        .background(.regularMaterial)
         .clipShape(RoundedRectangle(cornerRadius: 12))
     }
 
