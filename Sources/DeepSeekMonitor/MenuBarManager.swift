@@ -29,7 +29,15 @@ final class MenuBarManager: NSObject {
     }()
 
     private lazy var desktopWidgetWindowController: DesktopWidgetWindowController = {
-        DesktopWidgetWindowController(viewModel: viewModel)
+        let controller = DesktopWidgetWindowController(viewModel: viewModel)
+        controller.onTapModel = { [weak self] model in
+            guard let self else { return }
+            // Show detail panel to the right of the desktop widget
+            // without opening the main floating panel
+            guard let widgetWindow = controller.widgetWindow else { return }
+            self.modelDetailWindowController.show(for: model, anchoredTo: widgetWindow)
+        }
+        return controller
     }()
 
     // MARK: - Init
@@ -92,7 +100,7 @@ final class MenuBarManager: NSObject {
         )
     }
 
-    @objc private func togglePanel() {
+    @objc func togglePanel() {
         guard let button = statusItem.button else { return }
 
         if NSApp.currentEvent?.type == .rightMouseUp ||
@@ -115,7 +123,7 @@ final class MenuBarManager: NSObject {
         statusItem.menu = nil
     }
 
-    private func showPanel(button: NSStatusBarButton) {
+    func showPanel(button: NSStatusBarButton) {
         if let monitor = monitor {
             NSEvent.removeMonitor(monitor)
             self.monitor = nil
@@ -311,9 +319,26 @@ final class MenuBarManager: NSObject {
 
         settingsWindowController.show(anchorFrame: lastStatusButtonScreenFrame, screen: NSScreen.main)
     }
-    private func openModelDetail(_ model: DeepSeekModel) {
+    func openModelDetail(_ model: DeepSeekModel) {
         guard panel.isVisible else { return }
         modelDetailWindowController.show(for: model, anchoredTo: panel)
+    }
+
+    func handleDeepLink(url: URL) {
+        guard let host = url.host else { return }
+
+        let model: DeepSeekModel
+        switch host {
+        case "flash": model = .flash
+        case "pro": model = .pro
+        default: return
+        }
+
+        if !panel.isVisible, let button = statusItem.button {
+            showPanel(button: button)
+        }
+
+        openModelDetail(model)
     }
     @objc private func quitApp() { NSApplication.shared.terminate(nil) }
 

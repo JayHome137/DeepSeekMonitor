@@ -83,7 +83,7 @@ struct ModelDetailView: View {
             .padding(20)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Theme.windowBackground(for: colorScheme))
+        .background(.ultraThinMaterial)
     }
 
     private var headerCard: some View {
@@ -110,7 +110,7 @@ struct ModelDetailView: View {
             Spacer()
         }
         .padding(18)
-        .background(Theme.cardBackground(for: colorScheme))
+        .background(.regularMaterial)
         .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
     }
 
@@ -193,7 +193,7 @@ private struct MetricCard: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(18)
-        .background(Theme.cardBackground(for: colorScheme))
+        .background(.regularMaterial)
         .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
     }
 }
@@ -314,7 +314,7 @@ private struct DetailBarChartCard: View {
             }
         }
         .padding(18)
-        .background(Theme.cardBackground(for: colorScheme))
+        .background(.regularMaterial)
         .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
     }
 

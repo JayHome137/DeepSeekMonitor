@@ -4,38 +4,37 @@
 <dict>
 	<key>CFBundleDevelopmentRegion</key>
 	<string>zh_CN</string>
+	<key>CFBundleDisplayName</key>
+	<string>DeepSeek Monitor</string>
 	<key>CFBundleExecutable</key>
-	<string>DeepSeekMonitor</string>
-	<key>CFBundleIconFile</key>
-	<string>AppIcon</string>
+	<string>WidgetSupport</string>
 	<key>CFBundleIdentifier</key>
-	<string>com.deepseek.monitor</string>
+	<string>com.deepseek.monitor.widget</string>
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
 	<key>CFBundleName</key>
 	<string>DeepSeek Monitor</string>
 	<key>CFBundlePackageType</key>
-	<string>APPL</string>
+	<string>XPC!</string>
 	<key>CFBundleShortVersionString</key>
 	<string>1.3.1</string>
-	<key>CFBundleURLTypes</key>
+	<key>CFBundleSupportedPlatforms</key>
 	<array>
-		<dict>
-			<key>CFBundleURLName</key>
-			<string>com.deepseek.monitor</string>
-			<key>CFBundleURLSchemes</key>
-			<array>
-				<string>deepseekmonitor</string>
-			</array>
-		</dict>
+		<string>MacOSX</string>
 	</array>
 	<key>CFBundleVersion</key>
 	<string>2</string>
-	<key>LSUIElement</key>
-	<true/>
-	<key>NSHighResolutionCapable</key>
-	<true/>
-	<key>NSHumanReadableCopyright</key>
-	<string>Copyright © 2026. All rights reserved.</string>
+	<key>LSMinimumSystemVersion</key>
+	<string>14.0</string>
+	<key>NSExtension</key>
+	<dict>
+		<key>NSExtensionAttributes</key>
+		<dict>
+			<key>NSExtensionPointVersion</key>
+			<string>3.0</string>
+		</dict>
+		<key>NSExtensionPointIdentifier</key>
+		<string>com.apple.widgetkit-extension</string>
+	</dict>
 </dict>
 </plist>
