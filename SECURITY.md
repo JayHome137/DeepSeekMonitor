@@ -8,6 +8,16 @@ Open a private security advisory on GitHub if available, or contact the project 
 
 ## Sensitive Data
 
-Do not commit API Keys, exported usage files, screenshots containing account data, or local cache files.
+Do not commit API keys, exported usage files, local cache files, or screenshots containing private account data.
 
-If an API Key was accidentally committed or exposed, revoke it immediately and generate a new one from the DeepSeek platform.
+Sensitive local paths include:
+
+```text
+~/Library/Preferences/com.deepseek.monitor.plist
+~/Library/Application Support/DeepSeekMonitor/usage-sync/
+~/Library/Group Containers/N5YV5FV235.group.com.deepseek.monitor/
+```
+
+The WidgetKit snapshot does not include the API key, but it can include balance and usage totals. Treat it as private account data.
+
+If an API key was accidentally committed or exposed, revoke it immediately and generate a new one from the DeepSeek platform.

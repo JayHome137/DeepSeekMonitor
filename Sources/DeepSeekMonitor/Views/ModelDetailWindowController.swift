@@ -23,13 +23,21 @@ final class ModelDetailWindowController: NSObject {
     }
 
     func show(for model: DeepSeekModel, anchoredTo anchorWindow: NSWindow) {
+        show(for: model, anchoredTo: anchorWindow.frame, screen: anchorWindow.screen, dismissAnchorWindow: anchorWindow)
+    }
+
+    func show(for model: DeepSeekModel, anchoredTo anchorFrame: NSRect, screen: NSScreen?) {
+        show(for: model, anchoredTo: anchorFrame, screen: screen, dismissAnchorWindow: nil)
+    }
+
+    private func show(for model: DeepSeekModel, anchoredTo anchorFrame: NSRect, screen: NSScreen?, dismissAnchorWindow: NSWindow?) {
         let rootView = ModelDetailView(viewModel: viewModel, model: model)
 
         if let panel, let hostingController {
             hostingController.rootView = rootView
-            layout(panel: panel, nextTo: anchorWindow)
+            layout(panel: panel, anchoredTo: anchorFrame, screen: screen)
             panel.makeKeyAndOrderFront(nil)
-            installDismissMonitorsIfNeeded(anchorWindow: anchorWindow)
+            installDismissMonitorsIfNeeded(anchorWindow: dismissAnchorWindow)
             return
         }
 
@@ -39,7 +47,7 @@ final class ModelDetailWindowController: NSObject {
                 x: 0,
                 y: 0,
                 width: Theme.detailPanelWidth,
-                height: Theme.panelHeight
+                height: Theme.detailPanelHeight
             ),
             styleMask: [.borderless, .fullSizeContentView],
             backing: .buffered,
@@ -61,9 +69,9 @@ final class ModelDetailWindowController: NSObject {
         self.hostingController = hostingController
         self.panel = panel
 
-        layout(panel: panel, nextTo: anchorWindow)
+        layout(panel: panel, anchoredTo: anchorFrame, screen: screen)
         panel.orderFrontRegardless()
-        installDismissMonitorsIfNeeded(anchorWindow: anchorWindow)
+        installDismissMonitorsIfNeeded(anchorWindow: dismissAnchorWindow)
     }
 
     func close() {
@@ -76,14 +84,14 @@ final class ModelDetailWindowController: NSObject {
     }
 
     private func layout(panel: NSPanel, anchoredTo anchorFrame: NSRect, screen: NSScreen?) {
-        panel.setContentSize(NSSize(width: Theme.detailPanelWidth, height: Theme.panelHeight))
+        panel.setContentSize(NSSize(width: Theme.detailPanelWidth, height: Theme.detailPanelHeight))
 
         guard let screen = screen ?? NSScreen.main else { return }
 
         // Position to the right of anchor, centered vertically
         var origin = NSPoint(
             x: anchorFrame.maxX + Theme.detailPanelGap,
-            y: anchorFrame.midY - Theme.panelHeight / 2
+            y: anchorFrame.midY - Theme.detailPanelHeight / 2
         )
 
         // If no room on right, try left
@@ -100,14 +108,14 @@ final class ModelDetailWindowController: NSObject {
         if origin.y < screen.visibleFrame.minY + 6 {
             origin.y = screen.visibleFrame.minY + 6
         }
-        if origin.y + Theme.panelHeight > screen.visibleFrame.maxY - 6 {
-            origin.y = screen.visibleFrame.maxY - Theme.panelHeight - 6
+        if origin.y + Theme.detailPanelHeight > screen.visibleFrame.maxY - 6 {
+            origin.y = screen.visibleFrame.maxY - Theme.detailPanelHeight - 6
         }
 
         panel.setFrameOrigin(origin)
     }
 
-    private func installDismissMonitorsIfNeeded(anchorWindow: NSWindow) {
+    private func installDismissMonitorsIfNeeded(anchorWindow: NSWindow?) {
         guard localMonitor == nil, globalMonitor == nil else { return }
 
         localMonitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] event in
@@ -117,7 +125,7 @@ final class ModelDetailWindowController: NSObject {
                 return event
             }
 
-            if event.window?.windowNumber == anchorWindow.windowNumber {
+            if let anchorWindow, event.window?.windowNumber == anchorWindow.windowNumber {
                 self.close()
                 return event
             }

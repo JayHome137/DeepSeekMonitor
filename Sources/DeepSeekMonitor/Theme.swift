@@ -12,12 +12,9 @@ enum Theme {
     static let panelEmptyHeight: CGFloat = 300
     static let panelCornerRadius: CGFloat = 22
     static let panelTopGap: CGFloat = 12
-    static let detailPanelWidth: CGFloat = 420
+    static let detailPanelWidth: CGFloat = panelWidth
+    static let detailPanelHeight: CGFloat = panelDashboardHeight
     static let detailPanelGap: CGFloat = 10
-    static let desktopWidgetWidth: CGFloat = 260
-    static let desktopWidgetHeight: CGFloat = 250
-    static let desktopWidgetGap: CGFloat = 10
-    static let desktopWidgetCornerRadius: CGFloat = panelCornerRadius
 
     // MARK: - Brand Colors
 

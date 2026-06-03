@@ -1,87 +1,84 @@
 # DeepSeek Monitor — Project Guide
 
-macOS Menu Bar app for monitoring DeepSeek V4 Flash / Pro token usage and billing.
-Swift 5.9+ / SwiftUI + AppKit / SPM / macOS 14+
+macOS menu bar app for monitoring DeepSeek V4 Flash / Pro token usage and billing.
+Swift 5.9+ / SwiftUI + AppKit + WidgetKit / SPM + Xcode project / macOS 14+
 
 ## Architecture
 
-```
-MVVM:  AppDelegate → MenuBarManager → DashboardViewModel → DeepSeekService
-                  ↘                    ↘ Views
-                   FloatingPanel       ContentView / BalanceCardView / UsageCardsView / UsageChartView
+```text
+AppDelegate -> MenuBarManager -> FloatingPanel / SettingsWindow / ModelDetailWindow
+            -> DashboardViewModel -> DeepSeekService / LocalCache
+            -> WidgetSupport reads App Group snapshot
 ```
 
-- **No storyboards / XIB** — pure programmatic UI
-- **No external dependencies** — Foundation + AppKit + SwiftUI + WebKit + Security only
-- **LSUIElement = true** — hidden from Dock, menu bar only
+- No storyboards / XIB: pure programmatic UI.
+- No third-party runtime dependencies: Foundation, AppKit, SwiftUI, WidgetKit, WebKit, Security, ServiceManagement.
+- `LSUIElement = true`: hidden from Dock, menu bar only.
+- App bundle id: `com.deepseek.monitor`.
+- Widget bundle id: `com.deepseek.monitor.widget`.
+- App Group: `N5YV5FV235.group.com.deepseek.monitor`.
 
 ## Key Files
 
 | File | Role |
 |---|---|
-| `App.swift` | `@main` entry, `@MainActor AppDelegate`, system sleep/wake handling |
-| `MenuBarManager.swift` | NSStatusBar + FloatingPanel (NSWindow) + NSTrackingArea hover detection + auto-close timer |
-| `DashboardViewModel.swift` | `@MainActor ObservableObject`, 60s polling, balance/usage aggregation, cache, CSV import |
-| `DeepSeekService.swift` | URLSession calls to `/user/balance` and `/v1/usage`, APIError enum, UserDefaults storage |
-| `Theme.swift` | Brand colors, panel dimensions, card styles, gradients — all UI constants live here |
-| `Models.swift` | BalanceResponse, UsageRecord, DeepSeekModel enum, usage summary models |
-| `LocalCache.swift` | Dashboard state snapshot + usage records cached in UserDefaults |
-| `UsageCSVImporter.swift` | Self-contained CSV parser — multi-language headers, date formats, amount/cents conversion |
-| `UsageAutoImportService.swift` | Watches Downloads + usage-sync folder for new CSV/ZIP, unzips via `/usr/bin/ditto` |
-| `UsageExportAutomationService.swift` | WKWebView automation — opens DeepSeek platform, JS injection to click export, download interception |
-| `DirectoryChangeMonitor.swift` | `DispatchSourceFileSystemObject`-based file watcher |
+| `Sources/DeepSeekMonitor/App.swift` | `@main` entry, sleep/wake and deep-link handling. |
+| `Sources/DeepSeekMonitor/MenuBarManager.swift` | NSStatusBar, main panel, settings/detail routing, widget deep links, hover auto-close. |
+| `Sources/DeepSeekMonitor/ViewModels/DashboardViewModel.swift` | Polling, balance/usage aggregation, cache, CSV import flow. |
+| `Sources/DeepSeekMonitor/Services/DeepSeekService.swift` | DeepSeek API calls and API key storage. |
+| `Sources/DeepSeekMonitor/Services/LocalCache.swift` | Dashboard cache and WidgetKit App Group snapshot. |
+| `Sources/DeepSeekMonitor/Views/ContentView.swift` | Main menu bar dashboard. |
+| `Sources/DeepSeekMonitor/Views/ModelDetailWindowController.swift` | V4 Flash / Pro side panel, same size as dashboard. |
+| `Sources/DeepSeekMonitor/Views/SettingsView.swift` | API key, native widget sync, login item, refresh/import/export settings. |
+| `Sources/WidgetSupport/TimelineProvider.swift` | WidgetKit timeline provider reading shared data. |
+| `Sources/WidgetSupport/WidgetViews.swift` | Medium WidgetKit UI, glass styling, model shortcuts. |
+| `Resources/Assets.xcassets/` | App/widget image assets compiled into app and appex. |
+| `build.sh` | Version bump, Xcode release build, signing, WidgetKit cleanup, DMG packaging. |
 
 ## Build & Run
 
 ```bash
-./build.sh icon       # Generate AppIcon.icns from SVG (requires librsvg)
-./build.sh restart    # Kill old process + release build + launch
-./build.sh release    # Release build → .app bundle
-./build.sh dmg        # Build .app + package DMG
+./build.sh icon       # Generate AppIcon.icns and asset catalog icon images from SVG.
+./build.sh release    # Increment build, build signed app + appex, create app and DMG in project root.
+./build.sh restart    # Run release, then open the generated project-root app.
+./build.sh dmg        # Run release and print DMG install guidance.
 ```
+
+Release outputs stay in the project root: `DeepSeekMonitor.app` and `DeepSeekMonitor-v<version>-build<build>.dmg`. Do not assume release installs into `/Applications`. The script may remove stale `/Applications/DeepSeekMonitor.app` for this project only, then leaves installation to the user via the DMG.
 
 ## Critical Gotchas
 
-### Do NOT use `.buttonStyle(.plain)` in menus/popovers
-Causes buttons to render gray and unresponsive in NSWindow/NSPopover + NSHostingController contexts.
-Use `.buttonStyle(.borderless)` or `.buttonStyle(.borderedProminent)` instead.
+### Native WidgetKit signing
 
-### Right-click menu on status item — use performClick pattern
-Persistent `statusItem.menu` binding steals left-click events. The correct pattern:
-```swift
-statusItem.menu = statusMenu
-button.performClick(nil)
-statusItem.menu = nil
-```
-Also: `button.sendAction(on: [.leftMouseUp, .rightMouseUp])` for explicit event handling.
+WidgetKit extensions on macOS 26 need a trusted Apple Development certificate. Xcode automatic signing is used when available. The app and appex must both carry `N5YV5FV235.group.com.deepseek.monitor`.
 
-### Usage endpoint may return 404
-DeepSeek's `/v1/usage` is not guaranteed available. The ViewModel handles this gracefully:
-- Balance query succeeds → display balance
-- Usage query fails with 404 → throw `.usageEndpointUnavailable` → show warning + fallback to CSV import
-- CSV import available via Settings → manual file picker + auto-detect Downloads folder
+### Widget data and cache
 
-### Window level for floating panels
-Use `level = .statusBar` with `collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .transient]`.
-Never use `NSPopover` with `NSHostingController` on macOS 14+ — event delivery is unreliable.
+The app writes `widget_snapshot` and `native_widget_enabled` into the App Group. `WidgetSupport` reads them in `TimelineProvider`. `build.sh release` clears DeepSeekMonitor-specific PluginKit/LaunchServices registrations, Chrono cache, relevance cache, and stale app copies. If the widget gallery keeps an old icon after repeated local builds, reboot macOS to force WidgetKit/IconServices to rescan `/Applications/DeepSeekMonitor.app`.
 
-## Data Flow
+### Icons
 
-```
-DeepSeek API ─→ DeepSeekService ─→ DashboardViewModel
-                   │                      │
-                   ▼                      ▼
-            UserDefaults          @Published props
-            (LocalCache)          ─→ ContentView / MenuBarIcon
-                                        │
-              ┌─────────────────────────┤
-              ▼                         ▼
-       BalanceCardView            UsageCardsView
-       UsageChartView            (tap → ModelDetailView)
-```
+After `actool`, `build.sh` copies `Resources/AppIcon.icns` back into both app and appex so the full `ic12` icon remains available for LaunchServices and WidgetKit.
 
-## Token Storage
+### Widget families and deep links
 
-API Key: `UserDefaults.standard` key `deepseek_api_key` (domain `com.deepseek.monitor`)
-Cached usage: `LocalCache` using `UserDefaults` keys `cached_dashboard` / `cached_usage_history`
-Auto-import folder: `~/Library/Application Support/DeepSeekMonitor/usage-sync/`
+Only `.systemMedium` is supported. The old small widget and old hand-written desktop widget window are removed. Widget row taps use `deepseekmonitor://flash` and `deepseekmonitor://pro`, and should open only the model detail side panel.
+
+### Detail panel sizing
+
+`Theme.detailPanelWidth = Theme.panelWidth` and `Theme.detailPanelHeight = Theme.panelDashboardHeight`. Any model-detail trigger should go through `ModelDetailWindowController` so dashboard clicks and widget deep links stay aligned.
+
+### Buttons and status menu
+
+Avoid `.buttonStyle(.plain)` for menu/popover controls that need reliable hit testing; prefer `.borderless` or `.borderedProminent`. Right-click status item menus must use the temporary `statusItem.menu` + `button.performClick(nil)` pattern, then set `statusItem.menu = nil`.
+
+### Usage endpoint fallback
+
+DeepSeek's `/v1/usage` can return 404. Balance should still display, and usage should fall back to CSV/ZIP import or WKWebView export automation.
+
+## Data Storage
+
+- API key: `~/Library/Preferences/com.deepseek.monitor.plist`, key `deepseek_api_key`.
+- Dashboard cache: `cached_dashboard`, `cached_usage_history`.
+- Widget App Group: `~/Library/Group Containers/N5YV5FV235.group.com.deepseek.monitor/`, keys `widget_snapshot`, `native_widget_enabled`.
+- Auto-import folder: `~/Library/Application Support/DeepSeekMonitor/usage-sync/`.

@@ -4,9 +4,13 @@ import SwiftUI
 // MARK: - Widget Colors
 
 private let brandBlue = Color(red: 0.302, green: 0.420, blue: 0.996)
-private let flashColor = Color.blue
-private let proColor = Color.purple
+private let brandBlueLight = Color(red: 0.420, green: 0.522, blue: 1.0)
 private let costOrange = Color.orange
+private let glassBase = Color(red: 0.035, green: 0.055, blue: 0.060)
+private let textStrong = Color(red: 0.98, green: 0.99, blue: 1.0)
+private let textMain = Color(red: 0.86, green: 0.90, blue: 0.91)
+private let textMuted = Color(red: 0.70, green: 0.76, blue: 0.78)
+private let textFaint = Color(red: 0.56, green: 0.62, blue: 0.64)
 
 // MARK: - Widget Configuration
 
@@ -19,7 +23,7 @@ struct DeepSeekWidget: Widget {
         }
         .configurationDisplayName("DeepSeek Monitor")
         .description("查看余额和模型用量")
-        .supportedFamilies([.systemSmall, .systemMedium])
+        .supportedFamilies([.systemMedium])
     }
 }
 
@@ -28,86 +32,241 @@ struct DeepSeekWidget: Widget {
 struct DeepSeekWidgetEntryView: View {
     var entry: WidgetEntry
 
-    @Environment(\.widgetFamily) var family
+    var body: some View {
+        Group {
+            if entry.isWidgetEnabled {
+                MediumWidgetView(entry: entry)
+            } else {
+                DisabledWidgetView()
+            }
+        }
+        .containerBackground(for: .widget) {
+            Color.clear
+                .background(.ultraThinMaterial)
+                .overlay(glassBase.opacity(0.34))
+        }
+        .unredacted()
+    }
+}
+
+// MARK: - Shared Pieces
+
+private struct WidgetHeader: View {
+    let title: String
+    let isAvailable: Bool
 
     var body: some View {
-        switch family {
-        case .systemSmall:
-            SmallWidgetView(entry: entry)
-        case .systemMedium:
-            MediumWidgetView(entry: entry)
-        default:
-            SmallWidgetView(entry: entry)
+        HStack(spacing: 7) {
+            BrandGlyph()
+
+            Text(title)
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(textStrong)
+                .widgetAccentable(false)
+                .lineLimit(1)
+                .minimumScaleFactor(0.75)
+
+            Spacer(minLength: 4)
+
+            Circle()
+                .fill(isAvailable ? Color.green : Color.red)
+                .frame(width: 6, height: 6)
         }
     }
 }
 
-// MARK: - Small Widget
+private struct BrandGlyph: View {
+    var body: some View {
+        ZStack {
+            Image("widget-icon")
+                .renderingMode(.original)
+                .resizable()
+                .scaledToFit()
+                .widgetAccentable(false)
+        }
+        .frame(width: 30, height: 30)
+    }
+}
 
-private struct SmallWidgetView: View {
-    var entry: WidgetEntry
+private enum ModelBadgeKind {
+    case flash
+    case pro
+
+    var background: Color {
+        switch self {
+        case .flash:
+            Color(red: 0.10, green: 0.22, blue: 0.24)
+        case .pro:
+            Color(red: 0.22, green: 0.16, blue: 0.30)
+        }
+    }
+
+    var foreground: Color {
+        switch self {
+        case .flash:
+            Color(red: 0.25, green: 0.56, blue: 1.0)
+        case .pro:
+            Color(red: 0.94, green: 0.18, blue: 1.0)
+        }
+    }
+
+    var symbolName: String {
+        switch self {
+        case .flash:
+            "bolt.fill"
+        case .pro:
+            "brain.head.profile"
+        }
+    }
+}
+
+private struct ModelBadge: View {
+    let kind: ModelBadgeKind
+    var size: CGFloat = 22
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            headerLabel
-
-            Spacer(minLength: 0)
-
-            balanceText
-
-            Spacer(minLength: 0)
-
-            dayCostRow
-        }
-        .padding(16)
-        .containerBackground(.ultraThinMaterial, for: .widget)
-        .widgetURL(URL(string: "deepseekmonitor://flash"))
-    }
-
-    private var headerLabel: some View {
-        HStack(spacing: 6) {
-            Text("DeepSeek")
-                .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(.primary)
-
+        ZStack {
             Circle()
-                .fill(entry.isAvailable ? Color.green : Color.red)
-                .frame(width: 6, height: 6)
+                .fill(kind.background)
+
+            Image(systemName: kind.symbolName)
+                .font(.system(size: size * 0.52, weight: .bold))
+                .symbolRenderingMode(.hierarchical)
+                .foregroundStyle(kind.foreground)
+                .widgetAccentable(false)
         }
+        .frame(width: size, height: size)
+        .widgetAccentable(false)
+    }
+}
+
+private struct GlassCard<Content: View>: View {
+    let content: Content
+
+    init(@ViewBuilder content: () -> Content) {
+        self.content = content()
     }
 
-    private var balanceText: some View {
-        Group {
-            if entry.hasData {
-                Text(String(format: "¥%.2f", entry.balance))
-                    .font(.system(size: 28, weight: .bold, design: .rounded))
-                    .foregroundStyle(entry.isAvailable ? brandBlue : .red)
-                    .minimumScaleFactor(0.6)
-                    .lineLimit(1)
-            } else {
-                Text("¥--")
-                    .font(.system(size: 28, weight: .bold, design: .rounded))
-                    .foregroundStyle(.secondary)
-                    .minimumScaleFactor(0.6)
-                    .lineLimit(1)
-            }
-        }
+    var body: some View {
+        content
+            .background(
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .fill(glassBase.opacity(0.76))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 8, style: .continuous)
+                            .fill(Color.white.opacity(0.075))
+                    )
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .stroke(Color.white.opacity(0.34), lineWidth: 0.9)
+            )
     }
+}
 
-    private var dayCostRow: some View {
+private struct BalanceAmount: View {
+    let entry: WidgetEntry
+    let size: CGFloat
+
+    var body: some View {
+        Text(entry.hasData ? currency(entry.balance) : "¥--")
+            .font(.system(size: size, weight: .bold, design: .rounded))
+            .monospacedDigit()
+            .foregroundStyle(entry.hasData ? (entry.isAvailable ? brandBlueLight : Color.red.opacity(0.95)) : textMuted)
+            .widgetAccentable(false)
+            .lineLimit(1)
+            .minimumScaleFactor(0.58)
+    }
+}
+
+private struct CostPill: View {
+    let label: String
+    let value: Double?
+
+    var body: some View {
         HStack(spacing: 4) {
-            Text("今日")
-                .font(.caption2)
-                .foregroundStyle(.secondary)
-            Text(entry.hasData
-                 ? String(format: "¥%.2f", entry.dayCost)
-                 : "¥--")
-                .font(.system(size: 14, weight: .semibold, design: .rounded))
+            Text(label)
+                .font(.system(size: 12, weight: .semibold, design: .rounded))
+                .foregroundStyle(textMuted)
+                .widgetAccentable(false)
+
+            Text(value.map(currency) ?? "¥--")
+                .font(.system(size: 12, weight: .semibold, design: .rounded))
                 .monospacedDigit()
-                .foregroundStyle(costOrange)
+                .foregroundStyle(costOrange.opacity(0.98))
+                .widgetAccentable(false)
                 .lineLimit(1)
                 .minimumScaleFactor(0.7)
         }
+    }
+}
+
+private struct ModelCostRow: View {
+    let entry: WidgetEntry
+    let kind: ModelBadgeKind
+    let costCents: Int
+    let url: String
+    let showsChevron: Bool
+    var height: CGFloat = 36
+
+    var body: some View {
+        Link(destination: URL(string: url)!) {
+            GlassCard {
+                HStack(spacing: 8) {
+                    ModelBadge(kind: kind, size: 25)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+
+                    Text(entry.hasData ? costFormatted(costCents) : "--")
+                        .font(.system(size: 13, weight: .bold, design: .rounded))
+                        .monospacedDigit()
+                        .foregroundStyle(entry.hasData ? textStrong : textFaint)
+                        .widgetAccentable(false)
+                        .lineLimit(1)
+                        .frame(width: 58, alignment: .trailing)
+
+                    if showsChevron {
+                        Image(systemName: "chevron.right")
+                            .font(.system(size: 8, weight: .medium))
+                            .foregroundStyle(textFaint)
+                            .frame(width: 8)
+                    }
+                }
+                .padding(.horizontal, 8)
+                .frame(maxWidth: .infinity, minHeight: height, maxHeight: height)
+            }
+        }
+    }
+}
+
+// MARK: - Disabled Widget
+
+private struct DisabledWidgetView: View {
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            WidgetHeader(title: "DeepSeek", isAvailable: false)
+
+            Spacer(minLength: 0)
+
+            GlassCard {
+                VStack(alignment: .leading, spacing: 5) {
+                    Text("小组件已关闭")
+                        .font(.system(size: 18, weight: .bold, design: .rounded))
+                        .foregroundStyle(textMain)
+                        .widgetAccentable(false)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.75)
+
+                    Text("在设置中重新启用")
+                        .font(.caption2)
+                        .foregroundStyle(textMuted)
+                        .widgetAccentable(false)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(10)
+            }
+        }
+        .padding(16)
+        .widgetURL(URL(string: "deepseekmonitor://settings"))
     }
 }
 
@@ -117,172 +276,78 @@ private struct MediumWidgetView: View {
     var entry: WidgetEntry
 
     var body: some View {
-        HStack(alignment: .top, spacing: 16) {
+        HStack(alignment: .top, spacing: 13) {
             leftColumn
+                .frame(maxWidth: .infinity, alignment: .leading)
             rightColumn
+                .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .padding(16)
-        .containerBackground(.ultraThinMaterial, for: .widget)
+        .padding(14)
     }
-
-    // MARK: Left Column
 
     private var leftColumn: some View {
         VStack(alignment: .leading, spacing: 0) {
-            headerLabel
-                .padding(.bottom, 8)
-
-            balanceText
+            WidgetHeader(title: "DeepSeek Monitor", isAvailable: entry.isAvailable)
                 .padding(.bottom, 10)
 
-            costsRow
+            BalanceAmount(entry: entry, size: 28)
+                .padding(.bottom, 10)
+
+            HStack(spacing: 10) {
+                CostPill(label: "今日", value: entry.hasData ? entry.dayCost : nil)
+                CostPill(label: "本月", value: entry.hasData ? entry.monthCost : nil)
+            }
 
             Spacer(minLength: 0)
 
             if entry.hasData {
                 Text("更新 \(entry.lastUpdated.formatted(date: .omitted, time: .shortened))")
                     .font(.system(size: 10, weight: .regular))
-                    .foregroundStyle(.tertiary)
-            }
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-    }
-
-    private var headerLabel: some View {
-        HStack(spacing: 6) {
-            Text("DeepSeek Monitor")
-                .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(.primary)
-                .lineLimit(1)
-
-            Spacer(minLength: 4)
-
-            Circle()
-                .fill(entry.isAvailable ? Color.green : Color.red)
-                .frame(width: 6, height: 6)
-        }
-    }
-
-    private var balanceText: some View {
-        Group {
-            if entry.hasData {
-                Text(String(format: "¥%.2f", entry.balance))
-                    .font(.system(size: 26, weight: .bold, design: .rounded))
-                    .foregroundStyle(entry.isAvailable ? brandBlue : .red)
-                    .minimumScaleFactor(0.6)
-                    .lineLimit(1)
-            } else {
-                Text("¥--")
-                    .font(.system(size: 26, weight: .bold, design: .rounded))
-                    .foregroundStyle(.secondary)
-                    .minimumScaleFactor(0.6)
-                    .lineLimit(1)
+                    .foregroundStyle(textFaint)
+                    .widgetAccentable(false)
             }
         }
     }
-
-    private var costsRow: some View {
-        HStack(spacing: 12) {
-            costItem(label: "今日", value: entry.hasData ? entry.dayCost : nil)
-            costItem(label: "本月", value: entry.hasData ? entry.monthCost : nil)
-        }
-    }
-
-    private func costItem(label: String, value: Double?) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Text(label)
-                .font(.system(size: 10, weight: .regular))
-                .foregroundStyle(.secondary)
-            Text(value.map { String(format: "¥%.2f", $0) } ?? "¥--")
-                .font(.system(size: 14, weight: .semibold, design: .rounded))
-                .monospacedDigit()
-                .foregroundStyle(costOrange)
-                .lineLimit(1)
-                .minimumScaleFactor(0.7)
-        }
-    }
-
-    // MARK: Right Column
 
     private var rightColumn: some View {
-        VStack(alignment: .leading, spacing: 0) {
+        VStack(alignment: .leading, spacing: 8) {
             Text("模型用量")
-                .font(.system(size: 11, weight: .medium))
-                .foregroundStyle(.secondary)
-                .padding(.bottom, 8)
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(textMain)
+                .widgetAccentable(false)
 
-            modelRow(
-                label: "V4 Flash",
+            ModelCostRow(
+                entry: entry,
+                kind: .flash,
                 costCents: entry.flashCostCents,
-                color: flashColor,
-                url: "deepseekmonitor://flash"
+                url: "deepseekmonitor://flash",
+                showsChevron: true,
+                height: 38
             )
-            .padding(.bottom, 8)
 
-            modelRow(
-                label: "V4 Pro",
+            ModelCostRow(
+                entry: entry,
+                kind: .pro,
                 costCents: entry.proCostCents,
-                color: proColor,
-                url: "deepseekmonitor://pro"
+                url: "deepseekmonitor://pro",
+                showsChevron: true,
+                height: 38
             )
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-    }
 
-    private func modelRow(label: String, costCents: Int, color: Color, url: String) -> some View {
-        Link(destination: URL(string: url)!) {
-            HStack(spacing: 6) {
-                Circle()
-                    .fill(color)
-                    .frame(width: 7, height: 7)
-
-                Text(label)
-                    .font(.system(size: 12, weight: .regular))
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-
-                Spacer(minLength: 4)
-
-                if entry.hasData {
-                    Text(costFormatted(costCents))
-                        .font(.system(size: 12, weight: .semibold, design: .rounded))
-                        .monospacedDigit()
-                        .foregroundStyle(.primary)
-                        .lineLimit(1)
-                } else {
-                    Text("--")
-                        .font(.system(size: 12, weight: .semibold, design: .rounded))
-                        .foregroundStyle(.tertiary)
-                }
-            }
+            Spacer(minLength: 0)
         }
     }
+}
 
-    private func costFormatted(_ cents: Int) -> String {
-        String(format: "¥%.2f", Double(cents) / 100.0)
-    }
+private func currency(_ value: Double) -> String {
+    String(format: "¥%.2f", value)
+}
+
+private func costFormatted(_ cents: Int) -> String {
+    currency(Double(cents) / 100.0)
 }
 
 // MARK: - Preview
-
-#Preview(as: .systemSmall) {
-    DeepSeekWidget()
-} timeline: {
-    WidgetEntry.placeholder
-    WidgetEntry(
-        date: Date(),
-        balance: 1234.56,
-        isAvailable: true,
-        dayCost: 12.34,
-        monthCost: 98.76,
-        flashTokens: 150000,
-        flashCostCents: 560,
-        proTokens: 85000,
-        proCostCents: 1230,
-        lastUpdated: Date(),
-        hasData: true
-    )
-}
 
 #Preview(as: .systemMedium) {
     DeepSeekWidget()
@@ -290,6 +355,7 @@ private struct MediumWidgetView: View {
     WidgetEntry.placeholder
     WidgetEntry(
         date: Date(),
+        isWidgetEnabled: true,
         balance: 1234.56,
         isAvailable: true,
         dayCost: 12.34,

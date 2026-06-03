@@ -28,18 +28,6 @@ final class MenuBarManager: NSObject {
         ModelDetailWindowController(viewModel: viewModel)
     }()
 
-    private lazy var desktopWidgetWindowController: DesktopWidgetWindowController = {
-        let controller = DesktopWidgetWindowController(viewModel: viewModel)
-        controller.onTapModel = { [weak self] model in
-            guard let self else { return }
-            // Show detail panel to the right of the desktop widget
-            // without opening the main floating panel
-            guard let widgetWindow = controller.widgetWindow else { return }
-            self.modelDetailWindowController.show(for: model, anchoredTo: widgetWindow)
-        }
-        return controller
-    }()
-
     // MARK: - Init
 
     override init() {
@@ -235,21 +223,6 @@ final class MenuBarManager: NSObject {
             }
             .store(in: &cancellables)
 
-        viewModel.$isDesktopWidgetEnabled
-            .removeDuplicates()
-            .receive(on: DispatchQueue.main)
-            .sink { [weak self] isEnabled in
-                if isEnabled {
-                    self?.showDesktopWidget()
-                } else {
-                    self?.desktopWidgetWindowController.close()
-                }
-            }
-            .store(in: &cancellables)
-
-        if viewModel.isDesktopWidgetEnabled {
-            showDesktopWidget()
-        }
     }
 
     private func refreshStatusBarText() {
@@ -327,6 +300,11 @@ final class MenuBarManager: NSObject {
     func handleDeepLink(url: URL) {
         guard let host = url.host else { return }
 
+        if host == "settings" {
+            presentSettingsWindow()
+            return
+        }
+
         let model: DeepSeekModel
         switch host {
         case "flash": model = .flash
@@ -334,11 +312,22 @@ final class MenuBarManager: NSObject {
         default: return
         }
 
-        if !panel.isVisible, let button = statusItem.button {
-            showPanel(button: button)
-        }
+        closePanel()
+        openModelDetailFromWidget(model)
+    }
 
-        openModelDetail(model)
+    private func openModelDetailFromWidget(_ model: DeepSeekModel) {
+        let mouseLocation = NSEvent.mouseLocation
+        let anchorSize = NSSize(width: Theme.detailPanelWidth, height: Theme.detailPanelHeight)
+        let anchorFrame = NSRect(
+            x: mouseLocation.x - anchorSize.width / 2,
+            y: mouseLocation.y - anchorSize.height / 2,
+            width: anchorSize.width,
+            height: anchorSize.height
+        )
+        let screen = NSScreen.screens.first { $0.frame.contains(mouseLocation) } ?? NSScreen.main
+        NSApp.activate(ignoringOtherApps: true)
+        modelDetailWindowController.show(for: model, anchoredTo: anchorFrame, screen: screen)
     }
     @objc private func quitApp() { NSApplication.shared.terminate(nil) }
 
@@ -346,7 +335,6 @@ final class MenuBarManager: NSObject {
         stopAutoRefresh()
         UsageExportAutomationService.shared.stop()
         UsageExportAutomationService.shared.closeWindow()
-        desktopWidgetWindowController.close()
         closePanel()
         modelDetailWindowController.close()
         if let monitor = monitor { NSEvent.removeMonitor(monitor) }
@@ -384,14 +372,6 @@ private extension MenuBarManager {
         }
 
         panel.setFrame(NSRect(origin: newOrigin, size: newSize), display: true, animate: panel.isVisible)
-    }
-
-    func showDesktopWidget() {
-        if panel.isVisible {
-            desktopWidgetWindowController.show(leftOf: panel.frame, on: panel.screen)
-        } else {
-            desktopWidgetWindowController.show()
-        }
     }
 }
 

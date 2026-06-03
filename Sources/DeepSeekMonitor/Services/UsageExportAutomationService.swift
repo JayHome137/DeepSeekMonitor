@@ -984,7 +984,12 @@ extension UsageExportAutomationService: WKNavigationDelegate, WKUIDelegate, WKDo
         configure(download: download)
     }
 
-    func download(_ download: WKDownload, decideDestinationUsing response: URLResponse, suggestedFilename: String, completionHandler: @escaping (URL?) -> Void) {
+    func download(
+        _ download: WKDownload,
+        decideDestinationUsing response: URLResponse,
+        suggestedFilename: String,
+        completionHandler: @escaping @MainActor @Sendable (URL?) -> Void
+    ) {
         let incomingFolder = try? UsageAutoImportService.incomingFolderURL()
         let destination = incomingFolder?.appendingPathComponent(suggestedFilename)
         if let destination {

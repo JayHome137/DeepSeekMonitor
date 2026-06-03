@@ -207,6 +207,7 @@ func formatNumber(_ number: Int) -> String {
 // MARK: - Widget Snapshot (shared with Widget Extension via App Group)
 
 struct WidgetSnapshot: Codable {
+    let isWidgetEnabled: Bool
     let totalBalance: Double
     let isAccountAvailable: Bool
     let currentDayCost: Double

@@ -1,89 +1,111 @@
 # DeepSeek Monitor
 
-macOS 菜单栏工具 — 实时监控 DeepSeek V4 Flash / Pro Token 消耗和消费。
+macOS menu bar app for monitoring DeepSeek V4 Flash / Pro balance, token usage, and billing. The current local release is **v1.40 build9**.
 
-<p align="center">
-  <img src="Resources/1.png" width="360" alt="主面板" />
-  <br />
-  <em>主面板：余额 + 当日/月消耗 + V4 Flash / Pro 用量 + 趋势图</em>
-</p>
+## Screenshots
 
-## 功能
+| Native WidgetKit Widget | Menu Bar Dashboard |
+|---|---|
+| <img src="Resources/screenshots/widget-medium.png" width="360" alt="DeepSeek Monitor native WidgetKit desktop widget" /> | <img src="Resources/screenshots/main-panel.png" width="360" alt="DeepSeek Monitor menu bar dashboard" /> |
 
-- **余额监控** — 实时显示 DeepSeek 账户余额、当日消耗和本月消费
-- **Token 用量** — 按模型（V4 Flash / V4 Pro）展示 Token 消耗和费用
-- **消耗趋势** — 近 7 天 Token 消耗柱状图
-- **桌面小组件** — 可选悬浮卡片，快速查看余额和模型费用
-- **用量导入** — 支持从 DeepSeek Usage 页面导出 CSV 手动/自动导入解压
-- **自动网页导出** — WKWebView 自动登录 DeepSeek 平台并触发用量导出
-- **面板驻留时间** — 可配置自动收起时长，鼠标悬停保持开启
-- **模型详情** — 点击模型卡片展开二级面板，查看按日 Token 和请求数明细
-- **自动刷新** — 可选 30 秒 / 60 秒 / 2 分钟 / 5 分钟轮询间隔
-- **本地缓存** — App 重启后立即显示上次数据，不白屏
-- **深色模式** — 自动跟随系统外观
+| Model Detail Panel | Settings |
+|---|---|
+| <img src="Resources/screenshots/model-detail.png" width="350" alt="V4 Flash model detail panel" /> | <img src="Resources/screenshots/settings.png" width="350" alt="DeepSeek Monitor settings panel" /> |
 
-<p align="center">
-  <img src="Resources/2.png" width="500" alt="设置面板" />
-  <br />
-  <em>设置面板：API Key 配置 + 桌面小组件 + 自动刷新 + 面板驻留时间 + 用量导入 + 自动网页导出 + 数据管理</em>
-</p>
+## Features
 
-## 安装
+- **Menu bar dashboard** — balance, account availability, daily cost, monthly cost, V4 Flash / Pro usage, and 7-day token trend.
+- **Native WidgetKit desktop widget** — medium-size macOS widget with glass-style UI, account balance, daily/monthly spend, and model cost shortcuts.
+- **Model detail side panel** — click V4 Flash or V4 Pro to open a side panel aligned to the main dashboard size, with daily token and request charts.
+- **Deep link widget actions** — widget rows open the model detail panel directly, without opening the full dashboard first.
+- **Usage import fallback** — import DeepSeek Usage CSV/ZIP exports manually or from the watched sync folder when the official usage endpoint is unavailable.
+- **Automatic usage export** — optional WKWebView automation for DeepSeek Platform usage export.
+- **Configurable refresh** — 30 seconds, 60 seconds, 2 minutes, or 5 minutes.
+- **Launch at login** — optional macOS login item so the widget data stays fresh after sign-in.
+- **Local cache** — dashboard and widget data are available immediately after app restart.
+- **Local-only storage** — API key, cached usage, and widget snapshots stay on this Mac.
 
-### 从源码构建
+## Install
+
+### From DMG
+
+Open the generated DMG and drag `DeepSeekMonitor.app` into `/Applications`.
+
+After installing a new build, open the app once from `/Applications` so macOS can register the WidgetKit extension and refresh the shared widget data. If the widget gallery keeps an old icon after repeated local builds, rebooting macOS forces WidgetKit/IconServices to rescan the installed extension.
+
+### From Source
+
+Requirements:
+
+- macOS 14+
+- Xcode / Xcode Command Line Tools
+- Apple Development signing identity for the native WidgetKit extension
+- `librsvg` only if regenerating icons with `./build.sh icon`
 
 ```bash
 git clone https://github.com/JayHome137/DeepSeekMonitor.git
 cd DeepSeekMonitor
 
-# 生成 App 图标
+# Optional: regenerate AppIcon.icns and asset catalog icon images
 ./build.sh icon
 
-# 编译并运行
-./build.sh restart
+# Build signed release app and DMG in the project directory
+./build.sh release
 
-# 打包 DMG
-./build.sh dmg
+# Build, package, and launch the generated app
+./build.sh restart
 ```
 
-### 从 DMG 安装
+`./build.sh release` increments the build number, builds the app and `WidgetSupport.appex` with Xcode when available, signs both bundles, creates `DeepSeekMonitor.app`, and packages `DeepSeekMonitor-v<version>-build<build>.dmg` in the project root.
 
-前往 [GitHub Releases](https://github.com/JayHome137/DeepSeekMonitor/releases) 下载最新版本 DMG，将 App 拖入 Applications 文件夹。
+For this project only, the release script also clears stale DeepSeekMonitor system registrations and WidgetKit/Chrono caches before packaging, including old `/Applications/DeepSeekMonitor.app` copies. This avoids WidgetKit binding to stale local builds.
 
-## 使用
+## Use
 
-1. 点击菜单栏 DeepSeek 图标打开主面板
-2. 点击主面板右上角齿轮图标进入设置
-3. 输入你的 [DeepSeek API Key](https://platform.deepseek.com/api_keys)
-4. 点击 **验证并保存**
-5. 面板自动显示余额和用量数据
+1. Install `DeepSeekMonitor.app` into `/Applications`.
+2. Open the app and click the menu bar icon.
+3. Open Settings, paste a DeepSeek API key, then choose **验证并保存**.
+4. Enable **原生小组件数据** if you want the macOS desktop widget to sync data.
+5. Add the **DeepSeek Monitor** widget from the macOS widget gallery.
 
-如果用量接口不可用，可通过设置面板中的「用量导入」或「自动网页导出」同步 DeepSeek Usage 页面的数据。
+If DeepSeek's `/v1/usage` endpoint is unavailable for your account, use Settings to import CSV/ZIP usage exports or enable the automatic export helper.
 
-## 技术栈
+## Architecture
 
-**语言 / 框架**
-- Swift 5.9+ / SwiftUI / AppKit
+```text
+AppDelegate
+  -> MenuBarManager
+       -> FloatingPanel / ContentView
+       -> SettingsWindowController
+       -> ModelDetailWindowController
+  -> DashboardViewModel
+       -> DeepSeekService
+       -> LocalCache
+            -> UserDefaults
+            -> App Group snapshot
+                 -> WidgetSupport TimelineProvider
+                      -> WidgetViews
+```
 
-**桌面交互**
-- NSStatusBar 菜单栏 + NSWindow / NSPanel 浮动面板
-- NSTrackingArea 鼠标悬停检测 + 自动关闭定时器
+## Data Storage
 
-**数据来源**
-- URLSession — DeepSeek API 余额 + 用量查询
-- WKWebView + JavaScript 注入 — DeepSeek 平台自动导出
-- 自实现 CSV 解析器 — 中英文列名、ZIP 解压、金额单位转换
-- DispatchSourceFileSystemObject — 下载目录实时监测自动导入
+- API key: `~/Library/Preferences/com.deepseek.monitor.plist`, key `deepseek_api_key`
+- Dashboard cache: `cached_dashboard` / `cached_usage_history`
+- Native widget App Group: `N5YV5FV235.group.com.deepseek.monitor`
+- Widget keys: `widget_snapshot`, `native_widget_enabled`
+- Auto-import folder: `~/Library/Application Support/DeepSeekMonitor/usage-sync/`
 
-**状态管理**
-- Combine / ObservableObject / @Published
-- UserDefaults — LocalCache + API Key 存储
-- Security — Keychain 钥匙串存储
+No analytics, telemetry, or third-party tracking is included.
 
-**构建**
-- Swift Package Manager
-- Shell 脚本 — 编译 / 图标生成 / DMG 打包 / 进程管理 / build 号自增
+## Tech Stack
 
-## 许可证
+- Swift 5.9+
+- SwiftUI + AppKit + WidgetKit
+- Foundation URLSession
+- WKWebView automation
+- UserDefaults + App Group shared defaults
+- Shell build script for icons, signing, release builds, DMG packaging, and build number updates
+
+## License
 
 MIT
