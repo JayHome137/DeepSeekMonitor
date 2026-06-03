@@ -44,6 +44,12 @@ struct SettingsView: View {
         ("半小时", 1800),
     ]
 
+    private var appVersionText: String {
+        let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "--"
+        let build = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "--"
+        return "版本 \(version) build\(build)"
+    }
+
     enum VerifyStatus: Equatable {
         case idle
         case verifying
@@ -69,7 +75,7 @@ struct SettingsView: View {
                 Divider().padding(.vertical, 16)
 
                 // ── Desktop Widget ──
-                desktopWidgetSection
+                nativeWidgetSection
                 Divider().padding(.vertical, 16)
 
                 // ── Launch at Login ──
@@ -137,31 +143,22 @@ struct SettingsView: View {
             }
 
             Spacer()
-
-            Button(action: {
-                NSApp.keyWindow?.close()
-            }) {
-                Image(systemName: "xmark")
-            }
-            .buttonStyle(.plain)
-            .focusEffectDisabled()
-            .help("关闭")
         }
     }
 
     // MARK: - API Key
 
-    private var desktopWidgetSection: some View {
+    private var nativeWidgetSection: some View {
         VStack(alignment: .leading, spacing: 10) {
             Label("桌面小组件", systemImage: "rectangle.on.rectangle")
                 .font(.subheadline)
                 .fontWeight(.medium)
 
-            Text("在桌面上显示一个轻量悬浮卡片，快速查看余额、当日消耗、本月消费和模型费用。")
+            Text("控制系统原生 WidgetKit 小组件的数据同步。关闭后，已添加的小组件会显示停用状态。")
                 .font(.caption)
                 .foregroundStyle(.secondary)
 
-            Toggle("显示桌面小组件", isOn: $viewModel.isDesktopWidgetEnabled)
+            Toggle("启用原生小组件数据", isOn: $viewModel.isNativeWidgetEnabled)
                 .toggleStyle(.switch)
                 .scaleEffect(0.8, anchor: .leading)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -610,7 +607,7 @@ struct SettingsView: View {
                     Text("DeepSeek Monitor")
                         .font(.caption)
                         .foregroundStyle(.secondary)
-                    Text("版本 1.3.0")
+                    Text(appVersionText)
                         .font(.caption2)
                         .foregroundStyle(.tertiary)
                 }

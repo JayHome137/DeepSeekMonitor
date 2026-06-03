@@ -19,6 +19,12 @@ final class LocalCache {
     private enum Keys {
         static let dashboard = "cached_dashboard"
         static let usageHistory = "cached_usage_history"
+        static let nativeWidgetEnabled = "native_widget_enabled"
+        static let widgetSnapshot = "widget_snapshot"
+    }
+
+    private var sharedDefaults: UserDefaults? {
+        UserDefaults(suiteName: "N5YV5FV235.group.com.deepseek.monitor")
     }
 
     // MARK: - Dashboard Snapshot
@@ -62,11 +68,30 @@ final class LocalCache {
         defaults.removeObject(forKey: Keys.usageHistory)
     }
 
+    // MARK: - Native Widget
+
+    var isNativeWidgetEnabled: Bool {
+        guard let sharedDefaults else { return true }
+        return sharedDefaults.object(forKey: Keys.nativeWidgetEnabled) as? Bool ?? true
+    }
+
+    func setNativeWidgetEnabled(_ isEnabled: Bool) {
+        sharedDefaults?.set(isEnabled, forKey: Keys.nativeWidgetEnabled)
+        sharedDefaults?.synchronize()
+
+        if let cachedDashboard = loadDashboard() {
+            saveWidgetSnapshot(from: cachedDashboard)
+        } else {
+            WidgetCenter.shared.reloadTimelines(ofKind: "com.deepseek.monitor.widget")
+        }
+    }
+
     // MARK: - Widget Snapshot
 
     /// 写入 Widget 快照到 App Group 共享容器
     private func saveWidgetSnapshot(from dashboard: DashboardCache) {
         let snapshot = WidgetSnapshot(
+            isWidgetEnabled: isNativeWidgetEnabled,
             totalBalance: dashboard.totalBalance,
             isAccountAvailable: dashboard.isAccountAvailable,
             currentDayCost: dashboard.currentDayCost,
@@ -78,11 +103,12 @@ final class LocalCache {
             lastUpdated: dashboard.lastUpdated
         )
 
-        guard let sharedDefaults = UserDefaults(suiteName: "group.com.deepseek.monitor"),
+        guard let sharedDefaults,
               let snapshotData = try? encoder.encode(snapshot) else { return }
 
-        sharedDefaults.set(snapshotData, forKey: "widget_snapshot")
-        WidgetCenter.shared.reloadAllTimelines()
+        sharedDefaults.set(snapshotData, forKey: Keys.widgetSnapshot)
+        sharedDefaults.synchronize()
+        WidgetCenter.shared.reloadTimelines(ofKind: "com.deepseek.monitor.widget")
     }
 }
 

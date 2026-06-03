@@ -66,10 +66,10 @@ final class DashboardViewModel: ObservableObject {
             UserDefaults.standard.set(normalized, forKey: "panel_residence_seconds")
         }
     }
-    /// 是否显示桌面小组件
-    @Published var isDesktopWidgetEnabled: Bool = UserDefaults.standard.bool(forKey: "desktop_widget_enabled") {
+    /// 是否启用系统原生 WidgetKit 小组件数据
+    @Published var isNativeWidgetEnabled: Bool = LocalCache.shared.isNativeWidgetEnabled {
         didSet {
-            UserDefaults.standard.set(isDesktopWidgetEnabled, forKey: "desktop_widget_enabled")
+            LocalCache.shared.setNativeWidgetEnabled(isNativeWidgetEnabled)
         }
     }
 
