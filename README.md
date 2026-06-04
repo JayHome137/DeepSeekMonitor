@@ -4,6 +4,8 @@
 
 DeepSeek Monitor 是一款 macOS 菜单栏应用，用于监控 DeepSeek V4 Flash / Pro 的账户余额、Token 用量和消费情况。当前本地发布版本为 **v1.40 build9**。
 
+需要 **macOS 14 或更高版本**；支持 **M 系列 Mac**，也支持仍可升级到 macOS 14+ 的 **Intel Mac**。
+
 ## 截图
 
 | 原生 WidgetKit 小组件 | 菜单栏主面板 |
@@ -39,7 +41,7 @@ DeepSeek Monitor 是一款 macOS 菜单栏应用，用于监控 DeepSeek V4 Flas
 
 环境要求：
 
-- macOS 14+
+- macOS 14+；支持 M 系列 Mac，也支持可运行 macOS 14+ 的 Intel Mac
 - Xcode 或 Xcode Command Line Tools
 - 用于原生 WidgetKit 扩展的 Apple Development 签名身份
 - 只有在运行 `./build.sh icon` 重新生成图标时才需要 `librsvg`
