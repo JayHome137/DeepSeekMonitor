@@ -31,6 +31,7 @@ struct DeepSeekWidget: Widget {
 
 struct DeepSeekWidgetEntryView: View {
     var entry: WidgetEntry
+    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
         Group {
@@ -41,11 +42,39 @@ struct DeepSeekWidgetEntryView: View {
             }
         }
         .containerBackground(for: .widget) {
-            Color.clear
-                .background(.ultraThinMaterial)
-                .overlay(glassBase.opacity(0.34))
+            WidgetPanelBackground(colorScheme: colorScheme)
         }
         .unredacted()
+    }
+}
+
+private struct WidgetPanelBackground: View {
+    let colorScheme: ColorScheme
+
+    var body: some View {
+        ZStack {
+            Color.clear
+                .background(.ultraThinMaterial)
+
+            LinearGradient(
+                colors: [
+                    Color.white.opacity(colorScheme == .dark ? 0.18 : 0.28),
+                    Color.white.opacity(colorScheme == .dark ? 0.055 : 0.12),
+                    Color.white.opacity(0.015),
+                ],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+
+            glassBase
+                .opacity(colorScheme == .dark ? 0.08 : 0.018)
+
+            RoundedRectangle(cornerRadius: 24, style: .continuous)
+                .strokeBorder(
+                    colorScheme == .dark ? Color.white.opacity(0.18) : Color.black.opacity(0.07),
+                    lineWidth: 0.8
+                )
+        }
     }
 }
 
@@ -151,15 +180,15 @@ private struct GlassCard<Content: View>: View {
         content
             .background(
                 RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .fill(glassBase.opacity(0.76))
+                    .fill(.ultraThinMaterial)
                     .overlay(
                         RoundedRectangle(cornerRadius: 8, style: .continuous)
-                            .fill(Color.white.opacity(0.075))
+                            .fill(Color.white.opacity(0.10))
                     )
             )
             .overlay(
                 RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .stroke(Color.white.opacity(0.34), lineWidth: 0.9)
+                    .stroke(Color.white.opacity(0.24), lineWidth: 0.7)
             )
     }
 }
@@ -211,30 +240,58 @@ private struct ModelCostRow: View {
 
     var body: some View {
         Link(destination: URL(string: url)!) {
-            GlassCard {
-                HStack(spacing: 8) {
-                    ModelBadge(kind: kind, size: 25)
-                        .frame(maxWidth: .infinity, alignment: .leading)
+            HStack(spacing: 8) {
+                ModelBadge(kind: kind, size: 25)
+                    .frame(maxWidth: .infinity, alignment: .leading)
 
-                    Text(entry.hasData ? costFormatted(costCents) : "--")
-                        .font(.system(size: 13, weight: .bold, design: .rounded))
-                        .monospacedDigit()
-                        .foregroundStyle(entry.hasData ? textStrong : textFaint)
-                        .widgetAccentable(false)
-                        .lineLimit(1)
-                        .frame(width: 58, alignment: .trailing)
+                Text(entry.hasData ? costFormatted(costCents) : "--")
+                    .font(.system(size: 13, weight: .bold, design: .rounded))
+                    .monospacedDigit()
+                    .foregroundStyle(entry.hasData ? textStrong : textFaint)
+                    .widgetAccentable(false)
+                    .lineLimit(1)
+                    .frame(width: 58, alignment: .trailing)
 
-                    if showsChevron {
-                        Image(systemName: "chevron.right")
-                            .font(.system(size: 8, weight: .medium))
-                            .foregroundStyle(textFaint)
-                            .frame(width: 8)
-                    }
+                if showsChevron {
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 8, weight: .medium))
+                        .foregroundStyle(textFaint)
+                        .frame(width: 8)
                 }
-                .padding(.horizontal, 8)
-                .frame(maxWidth: .infinity, minHeight: height, maxHeight: height)
             }
+            .padding(.horizontal, 8)
+            .frame(maxWidth: .infinity, minHeight: height, maxHeight: height)
+            .background(modelRowBackground)
         }
+    }
+
+    private var modelRowBackground: some View {
+        RoundedRectangle(cornerRadius: 10, style: .continuous)
+            .fill(
+                LinearGradient(
+                    colors: [
+                        Color.white.opacity(0.115),
+                        Color.white.opacity(0.040),
+                    ],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+            )
+            .overlay(alignment: .topLeading) {
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .stroke(
+                        LinearGradient(
+                            colors: [
+                                Color.white.opacity(0.24),
+                                Color.white.opacity(0.020),
+                            ],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        ),
+                        lineWidth: 0.6
+                    )
+            }
+            .shadow(color: Color.black.opacity(0.18), radius: 8, x: 0, y: 4)
     }
 }
 
