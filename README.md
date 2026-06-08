@@ -2,7 +2,7 @@
 
 [English README](README_EN.MD) | 当前默认 README 为中文说明，英文版请查看 `README_EN.MD`。
 
-DeepSeek Monitor 是一款 macOS 菜单栏应用，用于监控 DeepSeek V4 Flash / Pro 的账户余额、Token 用量和消费情况。当前本地发布版本为 **v1.40 build9**。
+DeepSeek Monitor 是一款 macOS 菜单栏应用，用于监控 DeepSeek V4 Flash / Pro 的账户余额、Token 用量和消费情况。当前本地发布版本为 **v1.40 build10**。
 
 需要 **macOS 14 或更高版本**；支持 **M 系列 Mac**，也支持仍可升级到 macOS 14+ 的 **Intel Mac**。
 
