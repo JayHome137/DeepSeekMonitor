@@ -300,6 +300,7 @@ private struct DetailBarChartCard: View {
                         )
                         .padding(.top, 6)
                         .padding(.leading, 6)
+                        .zIndex(1)
                     }
                 }
             } else {
@@ -364,7 +365,7 @@ private struct TokenBreakdownTooltip: View {
             tooltipRow(color: Color(red: 0.28, green: 0.47, blue: 0.95), title: "输出", value: outputTokens)
         }
         .padding(16)
-        .frame(width: 380)
+        .frame(width: Theme.detailPanelWidth - 88, alignment: .leading)
         .background(Color(white: 0.24).opacity(0.96))
         .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
         .allowsHitTesting(false)
@@ -376,27 +377,28 @@ private struct TokenBreakdownTooltip: View {
                 .fill(color)
                 .frame(width: 18, height: 18)
 
-            HStack(spacing: 6) {
-                Text(title)
-                    .font(.system(size: 14, weight: .medium))
-                    .foregroundStyle(.white.opacity(0.86))
-                    .lineLimit(1)
-
-                if let suffix {
-                    Text(suffix)
-                        .font(.system(size: 13, weight: .medium, design: .rounded))
-                        .foregroundStyle(.white.opacity(0.52))
+            VStack(alignment: .leading, spacing: 3) {
+                HStack(spacing: 6) {
+                    Text(title)
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundStyle(.white.opacity(0.86))
                         .lineLimit(1)
+
+                    if let suffix {
+                        Text(suffix)
+                            .font(.system(size: 12, weight: .medium, design: .rounded))
+                            .foregroundStyle(.white.opacity(0.58))
+                            .lineLimit(1)
+                    }
                 }
+
+                Text("\(formatNumber(value)) tokens")
+                    .font(.system(size: 13, weight: .semibold, design: .rounded))
+                    .foregroundStyle(.white.opacity(0.72))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.78)
             }
-
-            Spacer()
-
-            Text("\(formatNumber(value)) tokens")
-                .font(.system(size: 15, weight: .semibold, design: .rounded))
-                .foregroundStyle(.white.opacity(0.72))
-                .lineLimit(1)
-                .minimumScaleFactor(0.82)
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
 }

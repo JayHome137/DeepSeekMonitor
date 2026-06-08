@@ -246,14 +246,14 @@ final class MenuBarManager: NSObject {
     private lazy var menuBarIcon: NSImage? = {
         if let url = Bundle.main.url(forResource: "deepseek-menu", withExtension: "png"),
            let image = NSImage(contentsOf: url) {
-            image.isTemplate = false
-            image.size = NSSize(width: 18, height: 18)
+            image.isTemplate = true
+            image.size = Theme.menuBarIconSize
             return image
         }
         if let url = Bundle.main.url(forResource: "deepseek-color", withExtension: "svg"),
            let image = NSImage(contentsOf: url) {
             image.isTemplate = true
-            image.size = NSSize(width: 18, height: 18)
+            image.size = Theme.menuBarIconSize
             return image
         }
         return nil
