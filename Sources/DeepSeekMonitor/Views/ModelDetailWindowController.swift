@@ -37,6 +37,7 @@ final class ModelDetailWindowController: NSObject {
             hostingController.rootView = rootView
             layout(panel: panel, anchoredTo: anchorFrame, screen: screen)
             panel.makeKeyAndOrderFront(nil)
+            panel.orderFrontRegardless()
             installDismissMonitorsIfNeeded(anchorWindow: dismissAnchorWindow)
             return
         }
@@ -59,7 +60,7 @@ final class ModelDetailWindowController: NSObject {
         panel.backgroundColor = .clear
         panel.hasShadow = true
         panel.isReleasedWhenClosed = false
-        panel.level = .normal
+        panel.level = .statusBar
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         panel.hidesOnDeactivate = false
         panel.contentView?.wantsLayer = true
