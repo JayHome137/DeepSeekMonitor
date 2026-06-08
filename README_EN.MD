@@ -2,7 +2,7 @@
 
 [中文 README](README.md) | The default README is now Chinese. This file keeps the English version of the same content.
 
-macOS menu bar app for monitoring DeepSeek V4 Flash / Pro balance, token usage, and billing. The current local release is **v1.40 build10**.
+macOS menu bar app for monitoring DeepSeek V4 Flash / Pro balance, token usage, and billing. The current local release is **v1.4.1**.
 
 Requires **macOS 14 or later**; compatible with **Apple Silicon** and **Intel Macs** that can run macOS 14+.
 
@@ -60,7 +60,7 @@ cd DeepSeekMonitor
 ./build.sh restart
 ```
 
-`./build.sh release` increments the build number, builds the app and `WidgetSupport.appex` with Xcode when available, signs both bundles, creates `DeepSeekMonitor.app`, and packages `DeepSeekMonitor-v<version>-build<build>.dmg` in the project root.
+`./build.sh release` increments the internal build number, builds the app and `WidgetSupport.appex` with Xcode when available, signs both bundles, creates `DeepSeekMonitor.app`, and packages `DeepSeekMonitor-v<version>.dmg` in the project root.
 
 For this project only, the release script also clears stale DeepSeekMonitor system registrations and WidgetKit/Chrono caches before packaging, including old `/Applications/DeepSeekMonitor.app` copies. This avoids WidgetKit binding to stale local builds.
 
@@ -108,7 +108,7 @@ No analytics, telemetry, or third-party tracking is included.
 - Foundation URLSession
 - WKWebView automation
 - UserDefaults + App Group shared defaults
-- Shell build script for icons, signing, release builds, DMG packaging, and build number updates
+- Shell build script for icons, signing, release builds, DMG packaging, and internal build number updates
 
 ## License
 
