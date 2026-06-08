@@ -216,7 +216,7 @@ final class DashboardViewModel: ObservableObject {
             let balanceResp = try await balanceTask
 
             // ── 更新余额 ──
-            if let info = balanceResp.balanceInfos.first {
+            if let info = balanceResp.preferredBalanceInfo {
                 balanceInfo = info
                 isAccountAvailable = balanceResp.isAvailable
                 totalBalance = Double(info.totalBalance) ?? 0

@@ -12,6 +12,17 @@ struct BalanceResponse: Codable {
         case isAvailable = "is_available"
         case balanceInfos = "balance_infos"
     }
+
+    /// 优先选择 CNY，其次选择有余额的币种，最后回退到第一个
+    var preferredBalanceInfo: BalanceInfo? {
+        if let cny = balanceInfos.first(where: { $0.currency == "CNY" }) {
+            return cny
+        }
+        if let nonZero = balanceInfos.first(where: { Double($0.totalBalance) ?? 0 > 0 }) {
+            return nonZero
+        }
+        return balanceInfos.first
+    }
 }
 
 struct BalanceInfo: Codable {
