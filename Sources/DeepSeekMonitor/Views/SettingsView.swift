@@ -46,8 +46,7 @@ struct SettingsView: View {
 
     private var appVersionText: String {
         let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "--"
-        let build = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "--"
-        return "版本 \(version) build\(build)"
+        return "版本 \(version)"
     }
 
     enum VerifyStatus: Equatable {
