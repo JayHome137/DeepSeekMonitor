@@ -18,7 +18,7 @@ WIDGET_APPEX="WidgetSupport.appex"
 APP_BUNDLE_ID="com.deepseek.monitor"
 WIDGET_BUNDLE_ID="com.deepseek.monitor.widget"
 TEAM_ID="N5YV5FV235"
-MARKETING_VERSION="1.40"
+MARKETING_VERSION="1.4.1"
 
 # 颜色输出
 RED='\033[0;31m'
@@ -39,7 +39,7 @@ increment_build() {
     /usr/libexec/PlistBuddy -c "Set CFBundleShortVersionString $MARKETING_VERSION" "$widget_plist" 2>/dev/null || true
     /usr/libexec/PlistBuddy -c "Set CFBundleVersion $next" "$plist" 2>/dev/null || true
     /usr/libexec/PlistBuddy -c "Set CFBundleVersion $next" "$widget_plist" 2>/dev/null || true
-    info "Build 版本号: $next"
+    info "内部 Build 版本号: $next"
 }
 
 current_build_version() {
@@ -48,9 +48,7 @@ current_build_version() {
 
 create_dmg() {
     local app_bundle="${PROJECT_NAME}.app"
-    local build_number
-    build_number=$(current_build_version)
-    local dmg_name="${PROJECT_NAME}-v${MARKETING_VERSION}-build${build_number}"
+    local dmg_name="${PROJECT_NAME}-v${MARKETING_VERSION}"
     local dmg_temp="${dmg_name}-temp.dmg"
     local dmg_final="${dmg_name}.dmg"
     local staging="dmg-staging"
@@ -460,7 +458,7 @@ case "$MODE" in
 
         info "Release 构建完成！"
         info "App Bundle: ${PROJECT_NAME}.app"
-        info "DMG: ${PROJECT_NAME}-v${MARKETING_VERSION}-build$(current_build_version).dmg"
+        info "DMG: ${PROJECT_NAME}-v${MARKETING_VERSION}.dmg"
         info "运行: open ${PROJECT_NAME}.app"
         ;;
 

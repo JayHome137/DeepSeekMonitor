@@ -2,7 +2,7 @@
 
 [English README](README_EN.MD) | 当前默认 README 为中文说明，英文版请查看 `README_EN.MD`。
 
-DeepSeek Monitor 是一款 macOS 菜单栏应用，用于监控 DeepSeek V4 Flash / Pro 的账户余额、Token 用量和消费情况。当前本地发布版本为 **v1.40 build10**。
+DeepSeek Monitor 是一款 macOS 菜单栏应用，用于监控 DeepSeek V4 Flash / Pro 的账户余额、Token 用量和消费情况。当前本地发布版本为 **v1.4.1**。
 
 需要 **macOS 14 或更高版本**；支持 **M 系列 Mac**，也支持仍可升级到 macOS 14+ 的 **Intel Mac**。
 
@@ -60,7 +60,7 @@ cd DeepSeekMonitor
 ./build.sh restart
 ```
 
-`./build.sh release` 会递增 build 号，在可用时通过 Xcode 构建主应用和 `WidgetSupport.appex`，签名两个 bundle，在项目根目录生成 `DeepSeekMonitor.app`，并打包 `DeepSeekMonitor-v<version>-build<build>.dmg`。
+`./build.sh release` 会递增内部 build 号，在可用时通过 Xcode 构建主应用和 `WidgetSupport.appex`，签名两个 bundle，在项目根目录生成 `DeepSeekMonitor.app`，并打包 `DeepSeekMonitor-v<version>.dmg`。
 
 只针对这个项目，release 脚本还会在打包前清理旧的 DeepSeekMonitor 系统注册和 WidgetKit / Chrono 缓存，包括旧的 `/Applications/DeepSeekMonitor.app` 副本，以避免 WidgetKit 绑定到过期的本地构建。
 
@@ -108,7 +108,7 @@ AppDelegate
 - Foundation URLSession
 - WKWebView 自动化
 - UserDefaults + App Group shared defaults
-- Shell 构建脚本：图标、签名、release 构建、DMG 打包和 build 号更新
+- Shell 构建脚本：图标、签名、release 构建、DMG 打包和内部 build 号更新
 
 ## 许可证
 
