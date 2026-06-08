@@ -80,13 +80,30 @@ create_dmg() {
 }
 
 kill_running_app() {
-    OLD_PID=$(pgrep -x "${PROJECT_NAME}" 2>/dev/null || true)
-    if [ -n "$OLD_PID" ]; then
-        info "发现旧进程 (PID: $OLD_PID)，正在关闭..."
-        kill "$OLD_PID" 2>/dev/null || true
+    local pids=()
+    local line pid command
+
+    while read -r pid command; do
+        [ -n "$pid" ] || continue
+        case "$command" in
+            *"/${PROJECT_NAME}.app/Contents/MacOS/${PROJECT_NAME}"*|*"/${PROJECT_NAME}.app/Contents/PlugIns/${WIDGET_APPEX}/Contents/MacOS/${WIDGET_NAME}"*)
+                pids+=("$pid")
+                ;;
+        esac
+    done < <(ps -axo pid=,command=)
+
+    if [ "${#pids[@]}" -gt 0 ]; then
+        info "发现旧进程 (PID: ${pids[*]})，正在关闭..."
+        kill "${pids[@]}" 2>/dev/null || true
         sleep 1
-        if kill -0 "$OLD_PID" 2>/dev/null; then
-            kill -9 "$OLD_PID" 2>/dev/null || true
+        local alive=()
+        for pid in "${pids[@]}"; do
+            if kill -0 "$pid" 2>/dev/null; then
+                alive+=("$pid")
+            fi
+        done
+        if [ "${#alive[@]}" -gt 0 ]; then
+            kill -9 "${alive[@]}" 2>/dev/null || true
         fi
         info "旧进程已关闭"
     fi
@@ -171,7 +188,7 @@ cleanup_project_system_state() {
     remove_app_bundle_if_deepseek "$HOME/.Trash/${PROJECT_NAME}.app"
     remove_globbed_app_bundles "$HOME/Library/Developer/Xcode/DerivedData/${PROJECT_NAME}-*/Build/Products/Debug/${PROJECT_NAME}.app"
 
-    unregister_app_bundle "${BUILD_DIR}/xcode-release/Release/${PROJECT_NAME}.app"
+    remove_app_bundle_if_deepseek "${BUILD_DIR}/xcode-release/Release/${PROJECT_NAME}.app"
     rm -rf "${BUILD_DIR}/XcodeWidgetProbe" "${BUILD_DIR}/XcodeReleaseCheck"
     clear_widgetkit_cache
 }
@@ -415,8 +432,9 @@ build_release_xcode() {
 
     # Xcode 会把临时构建产物注册到 LaunchServices/PluginKit。这里先移除，
     # 避免系统之后错误绑定到 .build 里的 WidgetSupport.appex。
-    pluginkit -r "$xcode_widget" 2>/dev/null || true
+    unregister_app_bundle "$xcode_app"
     pluginkit -r "$local_widget" 2>/dev/null || true
+    rm -rf "$xcode_app"
 
     lipo -info "${PROJECT_NAME}.app/Contents/MacOS/${PROJECT_NAME}"
     lipo -info "${local_widget}/Contents/MacOS/${WIDGET_NAME}"
