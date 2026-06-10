@@ -12,6 +12,22 @@ private let textMain = Color(red: 0.86, green: 0.90, blue: 0.91)
 private let textMuted = Color(red: 0.70, green: 0.76, blue: 0.78)
 private let textFaint = Color(red: 0.56, green: 0.62, blue: 0.64)
 
+private func widgetTextStrong(for colorScheme: ColorScheme) -> Color {
+    colorScheme == .dark ? textStrong : Color(red: 0.13, green: 0.16, blue: 0.19)
+}
+
+private func widgetTextMain(for colorScheme: ColorScheme) -> Color {
+    colorScheme == .dark ? textMain : Color(red: 0.24, green: 0.29, blue: 0.32)
+}
+
+private func widgetTextMuted(for colorScheme: ColorScheme) -> Color {
+    colorScheme == .dark ? textMuted : Color(red: 0.42, green: 0.48, blue: 0.52)
+}
+
+private func widgetTextFaint(for colorScheme: ColorScheme) -> Color {
+    colorScheme == .dark ? textFaint : Color(red: 0.56, green: 0.62, blue: 0.66)
+}
+
 // MARK: - Widget Configuration
 
 struct DeepSeekWidget: Widget {
@@ -83,6 +99,7 @@ private struct WidgetPanelBackground: View {
 private struct WidgetHeader: View {
     let title: String
     let isAvailable: Bool
+    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
         HStack(spacing: 7) {
@@ -90,7 +107,7 @@ private struct WidgetHeader: View {
 
             Text(title)
                 .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(textStrong)
+                .foregroundStyle(widgetTextStrong(for: colorScheme))
                 .widgetAccentable(false)
                 .lineLimit(1)
                 .minimumScaleFactor(0.75)
@@ -106,14 +123,24 @@ private struct WidgetHeader: View {
 
 private struct BrandGlyph: View {
     var body: some View {
-        ZStack {
+        glyphImage
+            .scaledToFit()
+            .widgetAccentable(false)
+            .frame(width: 30, height: 30)
+    }
+
+    @ViewBuilder
+    private var glyphImage: some View {
+        if #available(macOS 15.0, *) {
             Image("widget-icon")
                 .renderingMode(.original)
                 .resizable()
-                .scaledToFit()
-                .widgetAccentable(false)
+                .widgetAccentedRenderingMode(.fullColor)
+        } else {
+            Image("widget-icon")
+                .renderingMode(.original)
+                .resizable()
         }
-        .frame(width: 30, height: 30)
     }
 }
 
@@ -152,25 +179,71 @@ private enum ModelBadgeKind {
 private struct ModelBadge: View {
     let kind: ModelBadgeKind
     var size: CGFloat = 22
+    @Environment(\.widgetRenderingMode) private var widgetRenderingMode
 
     var body: some View {
         ZStack {
             Circle()
-                .fill(kind.background)
+                .fill(badgeBackground)
+                .overlay {
+                    Circle()
+                        .stroke(badgeBorder, lineWidth: accentedRendering ? 1.1 : 0)
+                }
 
-            Image(systemName: kind.symbolName)
-                .font(.system(size: size * 0.52, weight: .bold))
-                .symbolRenderingMode(.hierarchical)
-                .foregroundStyle(kind.foreground)
-                .widgetAccentable(false)
+            badgeSymbol
         }
         .frame(width: size, height: size)
         .widgetAccentable(false)
+    }
+
+    @ViewBuilder
+    private var badgeSymbol: some View {
+        if #available(macOS 15.0, *) {
+            Image(systemName: kind.symbolName)
+                .widgetAccentedRenderingMode(.fullColor)
+                .font(.system(size: size * 0.54, weight: .black))
+                .symbolRenderingMode(.monochrome)
+                .foregroundStyle(badgeForeground)
+                .widgetAccentable(false)
+        } else {
+            Image(systemName: kind.symbolName)
+                .font(.system(size: size * 0.54, weight: .black))
+                .symbolRenderingMode(.monochrome)
+                .foregroundStyle(badgeForeground)
+                .widgetAccentable(false)
+        }
+    }
+
+    private var accentedRendering: Bool {
+        widgetRenderingMode != .fullColor
+    }
+
+    private var badgeBackground: Color {
+        if accentedRendering {
+            return kind == .flash
+                ? Color.white.opacity(0.98)
+                : Color.white.opacity(0.98)
+        }
+        return kind.background
+    }
+
+    private var badgeForeground: Color {
+        if accentedRendering {
+            return kind == .flash
+                ? Color(red: 0.03, green: 0.16, blue: 0.24)
+                : Color(red: 0.18, green: 0.05, blue: 0.26)
+        }
+        return kind.foreground
+    }
+
+    private var badgeBorder: Color {
+        accentedRendering ? Color.black.opacity(0.36) : .clear
     }
 }
 
 private struct GlassCard<Content: View>: View {
     let content: Content
+    @Environment(\.colorScheme) private var colorScheme
 
     init(@ViewBuilder content: () -> Content) {
         self.content = content()
@@ -183,12 +256,15 @@ private struct GlassCard<Content: View>: View {
                     .fill(.ultraThinMaterial)
                     .overlay(
                         RoundedRectangle(cornerRadius: 8, style: .continuous)
-                            .fill(Color.white.opacity(0.10))
+                            .fill(colorScheme == .dark ? Color.white.opacity(0.10) : Color.white.opacity(0.22))
                     )
             )
             .overlay(
                 RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .stroke(Color.white.opacity(0.24), lineWidth: 0.7)
+                    .stroke(
+                        colorScheme == .dark ? Color.white.opacity(0.24) : Color.black.opacity(0.08),
+                        lineWidth: 0.7
+                    )
             )
     }
 }
@@ -196,27 +272,33 @@ private struct GlassCard<Content: View>: View {
 private struct BalanceAmount: View {
     let entry: WidgetEntry
     let size: CGFloat
+    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
         Text(entry.hasData ? currency(entry.balance) : "¥--")
             .font(.system(size: size, weight: .bold, design: .rounded))
             .monospacedDigit()
-            .foregroundStyle(entry.hasData ? (entry.isAvailable ? brandBlueLight : Color.red.opacity(0.95)) : textMuted)
+            .foregroundStyle(entry.hasData ? (entry.isAvailable ? balanceColor : Color.red.opacity(0.95)) : widgetTextMuted(for: colorScheme))
             .widgetAccentable(false)
             .lineLimit(1)
             .minimumScaleFactor(0.58)
+    }
+
+    private var balanceColor: Color {
+        colorScheme == .dark ? brandBlueLight : brandBlue
     }
 }
 
 private struct CostPill: View {
     let label: String
     let value: Double?
+    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
         HStack(spacing: 4) {
             Text(label)
                 .font(.system(size: 12, weight: .semibold, design: .rounded))
-                .foregroundStyle(textMuted)
+                .foregroundStyle(widgetTextMuted(for: colorScheme))
                 .widgetAccentable(false)
 
             Text(value.map(currency) ?? "¥--")
@@ -237,6 +319,7 @@ private struct ModelCostRow: View {
     let url: String
     let showsChevron: Bool
     var height: CGFloat = 36
+    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
         Link(destination: URL(string: url)!) {
@@ -247,7 +330,7 @@ private struct ModelCostRow: View {
                 Text(entry.hasData ? costFormatted(costCents) : "--")
                     .font(.system(size: 13, weight: .bold, design: .rounded))
                     .monospacedDigit()
-                    .foregroundStyle(entry.hasData ? textStrong : textFaint)
+                    .foregroundStyle(entry.hasData ? widgetTextStrong(for: colorScheme) : widgetTextFaint(for: colorScheme))
                     .widgetAccentable(false)
                     .lineLimit(1)
                     .frame(width: 58, alignment: .trailing)
@@ -255,7 +338,7 @@ private struct ModelCostRow: View {
                 if showsChevron {
                     Image(systemName: "chevron.right")
                         .font(.system(size: 8, weight: .medium))
-                        .foregroundStyle(textFaint)
+                        .foregroundStyle(widgetTextFaint(for: colorScheme))
                         .frame(width: 8)
                 }
             }
@@ -270,8 +353,8 @@ private struct ModelCostRow: View {
             .fill(
                 LinearGradient(
                     colors: [
-                        Color.white.opacity(0.115),
-                        Color.white.opacity(0.040),
+                        colorScheme == .dark ? Color.white.opacity(0.115) : Color.white.opacity(0.30),
+                        colorScheme == .dark ? Color.white.opacity(0.040) : Color.white.opacity(0.12),
                     ],
                     startPoint: .topLeading,
                     endPoint: .bottomTrailing
@@ -282,8 +365,8 @@ private struct ModelCostRow: View {
                     .stroke(
                         LinearGradient(
                             colors: [
-                                Color.white.opacity(0.24),
-                                Color.white.opacity(0.020),
+                                colorScheme == .dark ? Color.white.opacity(0.24) : Color.black.opacity(0.10),
+                                colorScheme == .dark ? Color.white.opacity(0.020) : Color.black.opacity(0.02),
                             ],
                             startPoint: .topLeading,
                             endPoint: .bottomTrailing
@@ -291,13 +374,15 @@ private struct ModelCostRow: View {
                         lineWidth: 0.6
                     )
             }
-            .shadow(color: Color.black.opacity(0.18), radius: 8, x: 0, y: 4)
+            .shadow(color: Color.black.opacity(colorScheme == .dark ? 0.18 : 0.08), radius: 8, x: 0, y: 4)
     }
 }
 
 // MARK: - Disabled Widget
 
 private struct DisabledWidgetView: View {
+    @Environment(\.colorScheme) private var colorScheme
+
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             WidgetHeader(title: "DeepSeek", isAvailable: false)
@@ -308,14 +393,14 @@ private struct DisabledWidgetView: View {
                 VStack(alignment: .leading, spacing: 5) {
                     Text("小组件已关闭")
                         .font(.system(size: 18, weight: .bold, design: .rounded))
-                        .foregroundStyle(textMain)
+                        .foregroundStyle(widgetTextMain(for: colorScheme))
                         .widgetAccentable(false)
                         .lineLimit(1)
                         .minimumScaleFactor(0.75)
 
                     Text("在设置中重新启用")
                         .font(.caption2)
-                        .foregroundStyle(textMuted)
+                        .foregroundStyle(widgetTextMuted(for: colorScheme))
                         .widgetAccentable(false)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -331,6 +416,7 @@ private struct DisabledWidgetView: View {
 
 private struct MediumWidgetView: View {
     var entry: WidgetEntry
+    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
         HStack(alignment: .top, spacing: 13) {
@@ -360,7 +446,7 @@ private struct MediumWidgetView: View {
             if entry.hasData {
                 Text("更新 \(entry.lastUpdated.formatted(date: .omitted, time: .shortened))")
                     .font(.system(size: 10, weight: .regular))
-                    .foregroundStyle(textFaint)
+                    .foregroundStyle(widgetTextFaint(for: colorScheme))
                     .widgetAccentable(false)
             }
         }
@@ -370,7 +456,7 @@ private struct MediumWidgetView: View {
         VStack(alignment: .leading, spacing: 8) {
             Text("模型用量")
                 .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(textMain)
+                .foregroundStyle(widgetTextMain(for: colorScheme))
                 .widgetAccentable(false)
 
             ModelCostRow(

@@ -631,7 +631,7 @@ struct SettingsView: View {
             do {
                 let service = DeepSeekService.shared
                 let balance = try await service.fetchBalance()
-                let balanceText = balance.balanceInfos.first?.totalBalance ?? "?"
+                let balanceText = balance.preferredBalanceInfo?.totalBalance ?? "?"
                 verifyStatus = .success("验证成功，当前余额: ¥\(balanceText)")
                 isVerifying = false
             } catch let error as APIError {

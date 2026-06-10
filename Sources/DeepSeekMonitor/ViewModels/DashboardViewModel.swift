@@ -216,7 +216,7 @@ final class DashboardViewModel: ObservableObject {
             let balanceResp = try await balanceTask
 
             // ── 更新余额 ──
-            if let info = balanceResp.balanceInfos.first {
+            if let info = balanceResp.preferredBalanceInfo {
                 balanceInfo = info
                 isAccountAvailable = balanceResp.isAvailable
                 totalBalance = Double(info.totalBalance) ?? 0
@@ -623,10 +623,11 @@ final class DashboardViewModel: ObservableObject {
 
     private func buildModelDailyPoints(from values: [Date: (tokens: Int, hit: Int, miss: Int, output: Int, requests: Int)]) -> [ModelDailyUsagePoint] {
         values.keys.sorted().map { date in
+            let normalizedDate = Calendar.current.startOfDay(for: date)
             let metrics = values[date] ?? (0, 0, 0, 0, 0)
             return ModelDailyUsagePoint(
-                date: date,
-                label: chartDateFormatter.string(from: date),
+                date: normalizedDate,
+                label: chartDateFormatter.string(from: normalizedDate),
                 totalTokens: metrics.tokens,
                 inputCacheHitTokens: metrics.hit,
                 inputCacheMissTokens: metrics.miss,
