@@ -12,6 +12,19 @@ struct BalanceResponse: Codable {
         case isAvailable = "is_available"
         case balanceInfos = "balance_infos"
     }
+
+    /// Prefer CNY when DeepSeek returns multiple currency balances.
+    /// The API can change the order of balance_infos, so callers should not
+    /// rely on the first item being the display currency.
+    var preferredBalanceInfo: BalanceInfo? {
+        if let cny = balanceInfos.first(where: { $0.currency.caseInsensitiveCompare("CNY") == .orderedSame }) {
+            return cny
+        }
+        if let nonZero = balanceInfos.first(where: { (Double($0.totalBalance) ?? 0) > 0 }) {
+            return nonZero
+        }
+        return balanceInfos.first
+    }
 }
 
 struct BalanceInfo: Codable {

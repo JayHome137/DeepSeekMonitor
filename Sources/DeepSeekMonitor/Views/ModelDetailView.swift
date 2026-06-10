@@ -144,9 +144,9 @@ struct ModelDetailView: View {
     }
 
     private func expandedPoints(from original: [ModelDailyUsagePoint]) -> [ModelDailyUsagePoint] {
-        let lookup = Dictionary(uniqueKeysWithValues: original.map { ($0.date, $0) })
+        let lookup = Dictionary(uniqueKeysWithValues: original.map { (fullDateFormatter.string(from: $0.date), $0) })
         return viewModel.chartData.map { chartPoint in
-            if let point = lookup[chartPoint.date] {
+            if let point = lookup[fullDateFormatter.string(from: chartPoint.date)] {
                 return point
             }
             return ModelDailyUsagePoint(
@@ -258,37 +258,39 @@ private struct DetailBarChartCard: View {
 
             if hasVisibleData {
                 ZStack(alignment: .topLeading) {
-                    ScrollView(.horizontal, showsIndicators: false) {
-                        HStack(alignment: .bottom, spacing: 10) {
-                            ForEach(points) { point in
-                                VStack(spacing: 8) {
-                                    Text(point.value > 0 ? valueFormatter(point.value) : "")
-                                        .font(.system(size: 10, weight: .medium, design: .monospaced))
-                                        .foregroundStyle(.secondary)
-                                        .frame(height: 14)
+                    HStack(alignment: .bottom, spacing: 4) {
+                        ForEach(points) { point in
+                            VStack(spacing: 8) {
+                                Text(point.value > 0 ? valueFormatter(point.value) : "")
+                                    .font(.system(size: 9, weight: .medium, design: .monospaced))
+                                    .foregroundStyle(.secondary)
+                                    .lineLimit(1)
+                                    .minimumScaleFactor(0.58)
+                                    .frame(height: 14)
 
-                                    RoundedRectangle(cornerRadius: 6, style: .continuous)
-                                        .fill(gradient)
-                                        .frame(width: 18, height: barHeight(for: point.value))
-                                        .overlay {
-                                            RoundedRectangle(cornerRadius: 6, style: .continuous)
-                                                .fill(Color.clear)
-                                                .contentShape(Rectangle())
-                                                .onHover { isHovering in
-                                                    hoveredPointID = isHovering ? point.id : (hoveredPointID == point.id ? nil : hoveredPointID)
-                                                }
-                                        }
+                                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                                    .fill(gradient)
+                                    .frame(width: 18, height: barHeight(for: point.value))
+                                    .overlay {
+                                        RoundedRectangle(cornerRadius: 6, style: .continuous)
+                                            .fill(Color.clear)
+                                            .contentShape(Rectangle())
+                                            .onHover { isHovering in
+                                                hoveredPointID = isHovering ? point.id : (hoveredPointID == point.id ? nil : hoveredPointID)
+                                            }
+                                    }
 
-                                    Text(point.label)
-                                        .font(.system(size: 10))
-                                        .foregroundStyle(.tertiary)
-                                }
-                                .frame(width: 40)
+                                Text(point.label)
+                                    .font(.system(size: 10))
+                                    .foregroundStyle(.tertiary)
+                                    .lineLimit(1)
+                                    .minimumScaleFactor(0.75)
                             }
+                            .frame(maxWidth: .infinity)
                         }
-                        .padding(.top, 4)
-                        .frame(height: 220, alignment: .bottom)
                     }
+                    .padding(.top, 4)
+                    .frame(height: 220, alignment: .bottom)
 
                     if let hoveredPoint, let breakdown = hoveredPoint.breakdown {
                         TokenBreakdownTooltip(
