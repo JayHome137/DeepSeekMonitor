@@ -2,7 +2,7 @@
 
 [中文 README](README.md) | The default README is now Chinese. This file keeps the English version of the same content.
 
-macOS menu bar app for monitoring DeepSeek V4 Flash / Pro balance, token usage, and billing. The current local release is **v1.4.3**.
+macOS menu bar app for monitoring DeepSeek V4 Flash / Pro balance, token usage, and billing. The current local release is **v1.4.6**.
 
 Requires **macOS 14 or later**; compatible with **Apple Silicon** and **Intel Macs** that can run macOS 14+.
 
