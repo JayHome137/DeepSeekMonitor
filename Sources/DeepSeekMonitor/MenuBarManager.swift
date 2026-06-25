@@ -318,18 +318,49 @@ final class MenuBarManager: NSObject {
 
     private func openModelDetailFromWidget(_ model: DeepSeekModel) {
         let mouseLocation = NSEvent.mouseLocation
-        let widgetSize = NSSize(width: 344, height: 154)
-        let clickXOffsetFromWidgetLeft: CGFloat = 280
-        let clickYOffsetFromWidgetBottom: CGFloat = model == .flash ? 96 : 50
-        let anchorFrame = NSRect(
-            x: mouseLocation.x - clickXOffsetFromWidgetLeft,
-            y: mouseLocation.y - clickYOffsetFromWidgetBottom,
-            width: widgetSize.width,
-            height: widgetSize.height
-        )
+        let anchorFrame = widgetFrame(containing: mouseLocation) ?? estimatedWidgetFrame(from: mouseLocation, model: model)
         let screen = NSScreen.screens.first { $0.frame.contains(mouseLocation) } ?? NSScreen.main
         NSApp.activate(ignoringOtherApps: true)
         modelDetailWindowController.show(for: model, anchoredTo: anchorFrame, screen: screen)
+    }
+
+    private func widgetFrame(containing point: NSPoint) -> NSRect? {
+        guard let windows = CGWindowListCopyWindowInfo(.optionOnScreenOnly, kCGNullWindowID) as? [[String: Any]] else {
+            return nil
+        }
+
+        let candidates = windows.compactMap { window -> NSRect? in
+            guard let bounds = window[kCGWindowBounds as String] as? [String: Any],
+                  let x = bounds["X"] as? CGFloat,
+                  let y = bounds["Y"] as? CGFloat,
+                  let width = bounds["Width"] as? CGFloat,
+                  let height = bounds["Height"] as? CGFloat else {
+                return nil
+            }
+
+            let maxScreenY = NSScreen.screens.map(\.frame.maxY).max() ?? 0
+            let frame = NSRect(x: x, y: maxScreenY - y - height, width: width, height: height)
+            guard frame.contains(point),
+                  (300...420).contains(width),
+                  (120...210).contains(height) else {
+                return nil
+            }
+            return frame
+        }
+
+        return candidates.min { $0.width * $0.height < $1.width * $1.height }
+    }
+
+    private func estimatedWidgetFrame(from point: NSPoint, model: DeepSeekModel) -> NSRect {
+        let widgetSize = NSSize(width: 344, height: 154)
+        let modelRowLeftXOffsetFromWidgetLeft: CGFloat = 188
+        let clickYOffsetFromWidgetBottom: CGFloat = model == .flash ? 96 : 50
+        return NSRect(
+            x: point.x - modelRowLeftXOffsetFromWidgetLeft,
+            y: point.y - clickYOffsetFromWidgetBottom,
+            width: widgetSize.width,
+            height: widgetSize.height
+        )
     }
     @objc private func quitApp() { NSApplication.shared.terminate(nil) }
 
