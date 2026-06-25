@@ -318,12 +318,14 @@ final class MenuBarManager: NSObject {
 
     private func openModelDetailFromWidget(_ model: DeepSeekModel) {
         let mouseLocation = NSEvent.mouseLocation
-        let anchorSize = NSSize(width: Theme.detailPanelWidth, height: Theme.detailPanelHeight)
+        let widgetSize = NSSize(width: 344, height: 154)
+        let clickXOffsetFromWidgetLeft: CGFloat = 280
+        let clickYOffsetFromWidgetBottom: CGFloat = model == .flash ? 96 : 50
         let anchorFrame = NSRect(
-            x: mouseLocation.x - anchorSize.width / 2,
-            y: mouseLocation.y - anchorSize.height / 2,
-            width: anchorSize.width,
-            height: anchorSize.height
+            x: mouseLocation.x - clickXOffsetFromWidgetLeft,
+            y: mouseLocation.y - clickYOffsetFromWidgetBottom,
+            width: widgetSize.width,
+            height: widgetSize.height
         )
         let screen = NSScreen.screens.first { $0.frame.contains(mouseLocation) } ?? NSScreen.main
         NSApp.activate(ignoringOtherApps: true)

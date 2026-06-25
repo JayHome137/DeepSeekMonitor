@@ -29,13 +29,13 @@ struct ModelDetailView: View {
 
                 HStack(spacing: 12) {
                     MetricCard(
-                        title: "API 请求次数",
+                        title: "近 \(viewModel.usageLookbackDays) 日请求",
                         value: formatNumber(totalRequests),
                         tint: tint
                     )
 
                     MetricCard(
-                        title: "Tokens",
+                        title: "近 \(viewModel.usageLookbackDays) 日 Tokens",
                         value: formatNumber(totalTokens),
                         tint: tint
                     )
@@ -213,6 +213,12 @@ private struct ChartBreakdown {
     let outputTokens: Int
 }
 
+private enum TokenSegmentStyle {
+    static let cacheHit = Color(red: 0.18, green: 0.83, blue: 0.75)
+    static let cacheMiss = Color(red: 0.96, green: 0.62, blue: 0.04)
+    static let output = Color(red: 0.39, green: 0.40, blue: 0.95)
+}
+
 private struct DetailBarChartCard: View {
     let title: String
     let subtitle: String
@@ -238,6 +244,13 @@ private struct DetailBarChartCard: View {
         return points.first { $0.id == hoveredPointID }
     }
 
+    private var showsTokenBreakdown: Bool {
+        points.contains { point in
+            guard let breakdown = point.breakdown else { return false }
+            return breakdown.totalTokens > 0
+        }
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             HStack(alignment: .firstTextBaseline) {
@@ -256,6 +269,10 @@ private struct DetailBarChartCard: View {
                     .foregroundStyle(.secondary)
             }
 
+            if showsTokenBreakdown {
+                TokenBreakdownLegend()
+            }
+
             if hasVisibleData {
                 ZStack(alignment: .topLeading) {
                     HStack(alignment: .bottom, spacing: 4) {
@@ -268,9 +285,7 @@ private struct DetailBarChartCard: View {
                                     .minimumScaleFactor(0.58)
                                     .frame(height: 14)
 
-                                RoundedRectangle(cornerRadius: 6, style: .continuous)
-                                    .fill(gradient)
-                                    .frame(width: 18, height: barHeight(for: point.value))
+                                bar(for: point)
                                     .overlay {
                                         RoundedRectangle(cornerRadius: 6, style: .continuous)
                                             .fill(Color.clear)
@@ -325,6 +340,87 @@ private struct DetailBarChartCard: View {
         guard value > 0 else { return 10 }
         return max(18, CGFloat(value) / CGFloat(maxValue) * 150)
     }
+
+    @ViewBuilder
+    private func bar(for point: ChartValuePoint) -> some View {
+        if let breakdown = point.breakdown, breakdown.totalTokens > 0 {
+            StackedTokenBar(
+                breakdown: breakdown,
+                height: barHeight(for: point.value)
+            )
+            .frame(width: 18, height: barHeight(for: point.value))
+        } else {
+            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                .fill(gradient)
+                .frame(width: 18, height: barHeight(for: point.value))
+        }
+    }
+}
+
+private struct StackedTokenBar: View {
+    let breakdown: ChartBreakdown
+    let height: CGFloat
+
+    private var total: CGFloat {
+        CGFloat(max(breakdown.totalTokens, 1))
+    }
+
+    var body: some View {
+        GeometryReader { proxy in
+            VStack(spacing: 0) {
+                segment(
+                    value: breakdown.outputTokens,
+                    color: TokenSegmentStyle.output,
+                    availableHeight: proxy.size.height
+                )
+                segment(
+                    value: breakdown.inputCacheMissTokens,
+                    color: TokenSegmentStyle.cacheMiss,
+                    availableHeight: proxy.size.height
+                )
+                segment(
+                    value: breakdown.inputCacheHitTokens,
+                    color: TokenSegmentStyle.cacheHit,
+                    availableHeight: proxy.size.height
+                )
+            }
+            .frame(width: proxy.size.width, height: proxy.size.height, alignment: .bottom)
+            .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+        }
+        .frame(height: height)
+    }
+
+    @ViewBuilder
+    private func segment(value: Int, color: Color, availableHeight: CGFloat) -> some View {
+        if value > 0 {
+            Rectangle()
+                .fill(color)
+                .frame(height: max(2, CGFloat(value) / total * availableHeight))
+        }
+    }
+}
+
+private struct TokenBreakdownLegend: View {
+    var body: some View {
+        HStack(spacing: 10) {
+            legendItem(color: TokenSegmentStyle.cacheHit, title: "缓存命中输入")
+            legendItem(color: TokenSegmentStyle.cacheMiss, title: "未命中输入")
+            legendItem(color: TokenSegmentStyle.output, title: "输出")
+        }
+        .font(.system(size: 10, weight: .medium))
+        .foregroundStyle(.secondary)
+    }
+
+    private func legendItem(color: Color, title: String) -> some View {
+        HStack(spacing: 4) {
+            Circle()
+                .fill(color)
+                .frame(width: 7, height: 7)
+            Text(title)
+                .lineLimit(1)
+                .minimumScaleFactor(0.78)
+        }
+    }
 }
 
 private struct TokenBreakdownTooltip: View {
@@ -357,14 +453,14 @@ private struct TokenBreakdownTooltip: View {
                     .minimumScaleFactor(0.82)
             }
 
-            tooltipRow(color: Color(red: 0.56, green: 0.79, blue: 0.95), title: "输入（命中缓存）", value: inputCacheHitTokens)
+            tooltipRow(color: TokenSegmentStyle.cacheHit, title: "输入（命中缓存）", value: inputCacheHitTokens)
             tooltipRow(
-                color: Color(red: 0.40, green: 0.66, blue: 0.96),
+                color: TokenSegmentStyle.cacheMiss,
                 title: "输入（未命中缓存）",
                 value: inputCacheMissTokens,
                 suffix: inputCacheMissRateText
             )
-            tooltipRow(color: Color(red: 0.28, green: 0.47, blue: 0.95), title: "输出", value: outputTokens)
+            tooltipRow(color: TokenSegmentStyle.output, title: "输出", value: outputTokens)
         }
         .padding(16)
         .frame(width: Theme.detailPanelWidth - 88, alignment: .leading)

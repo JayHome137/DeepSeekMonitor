@@ -69,10 +69,12 @@ private struct UsageCardRow: View {
                         .foregroundStyle(.primary)
 
                     if let usage {
-                        HStack(spacing: 6) {
-                            Text("\(usage.totalTokensFormatted) Tokens")
-                                .font(.caption)
+                        VStack(alignment: .leading, spacing: 5) {
+                            Text(usage.totalTokensFormatted)
+                                .font(.caption.weight(.medium))
                                 .foregroundStyle(.secondary)
+                                .lineLimit(1)
+                                .minimumScaleFactor(0.75)
 
                             GeometryReader { geo in
                                 ZStack(alignment: .leading) {
@@ -116,6 +118,7 @@ private struct UsageCardRow: View {
                 }
             }
             .padding(12)
+            .frame(height: 72)
             .background(.regularMaterial)
             .clipShape(RoundedRectangle(cornerRadius: 12))
         }

@@ -6,9 +6,9 @@ import SwiftUI
 // 所有 UI 组件的颜色、渐变、字体统一从这里取
 
 enum Theme {
-    static let panelWidth: CGFloat = 356
+    static let panelWidth: CGFloat = 374
     static let panelHeight: CGFloat = 500
-    static let panelDashboardHeight: CGFloat = 560
+    static let panelDashboardHeight: CGFloat = 588
     static let panelEmptyHeight: CGFloat = 300
     static let panelCornerRadius: CGFloat = 22
     static let panelTopGap: CGFloat = 12
