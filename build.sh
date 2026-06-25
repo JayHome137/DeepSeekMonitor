@@ -18,7 +18,7 @@ WIDGET_APPEX="WidgetSupport.appex"
 APP_BUNDLE_ID="com.deepseek.monitor"
 WIDGET_BUNDLE_ID="com.deepseek.monitor.widget"
 TEAM_ID="N5YV5FV235"
-MARKETING_VERSION="1.4.6"
+MARKETING_VERSION="1.4.7"
 
 # 颜色输出
 RED='\033[0;31m'
