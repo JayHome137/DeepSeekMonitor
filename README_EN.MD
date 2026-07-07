@@ -31,6 +31,19 @@ Requires **macOS 14 or later**; compatible with **Apple Silicon** and **Intel Ma
 
 ## Install
 
+### With Homebrew
+
+```bash
+brew install --cask JayHome137/tap/deepseekmonitor
+```
+
+If the tap is already added:
+
+```bash
+brew tap JayHome137/tap
+brew install --cask deepseekmonitor
+```
+
 ### From DMG
 
 Open the generated DMG and drag `DeepSeekMonitor.app` into `/Applications`.
