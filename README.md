@@ -31,6 +31,19 @@ DeepSeek Monitor 是一款 macOS 菜单栏应用，用于监控 DeepSeek V4 Flas
 
 ## 安装
 
+### 通过 Homebrew 安装
+
+```bash
+brew install --cask JayHome137/tap/deepseekmonitor
+```
+
+如果已经添加过 tap，也可以使用：
+
+```bash
+brew tap JayHome137/tap
+brew install --cask deepseekmonitor
+```
+
 ### 通过 DMG 安装
 
 打开生成的 DMG，将 `DeepSeekMonitor.app` 拖入 `/Applications`。
