@@ -8,13 +8,21 @@ Requires **macOS 14 or later**; compatible with **Apple Silicon** and **Intel Ma
 
 ## Screenshots
 
-| Native WidgetKit Widget | Menu Bar Dashboard |
-|---|---|
-| <img src="Resources/screenshots/widget-medium.png" width="360" alt="DeepSeek Monitor native WidgetKit desktop widget" /> | <img src="Resources/screenshots/main-panel.png" width="360" alt="DeepSeek Monitor menu bar dashboard" /> |
+### Native WidgetKit Widget
 
-| Model Detail Panel | Settings |
+<p align="center">
+  <img src="Resources/screenshots/widget-medium.png" width="620" alt="DeepSeek Monitor native WidgetKit desktop widget" />
+</p>
+
+| Menu Bar Dashboard | Model Detail Panel |
 |---|---|
-| <img src="Resources/screenshots/model-detail.png" width="350" alt="V4 Flash model detail panel" /> | <img src="Resources/screenshots/settings.png" width="350" alt="DeepSeek Monitor settings panel" /> |
+| <img src="Resources/screenshots/main-panel.png" width="360" alt="DeepSeek Monitor menu bar dashboard" /> | <img src="Resources/screenshots/model-detail.png" width="360" alt="V4 Flash model detail panel" /> |
+
+### Settings
+
+<p align="center">
+  <img src="Resources/screenshots/settings.png" width="460" alt="DeepSeek Monitor settings panel" />
+</p>
 
 ## Features
 
