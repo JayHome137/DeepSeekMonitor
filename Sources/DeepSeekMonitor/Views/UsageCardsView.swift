@@ -127,13 +127,14 @@ private struct UsageCardRow: View {
     }
 
     private func costPerToken(_ usage: ModelUsageSummary) -> String {
-        let cost = Double(usage.costInCents) / 100.0
+        let cost = NSDecimalNumber(decimal: usage.costAmount).doubleValue
         guard cost > 0 else { return "" }
         let tpy = Double(usage.totalTokens) / cost
+        let symbol = currencySymbol(for: usage.currencyCode)
         if tpy > 1_000_000 {
-            return String(format: "%.1fM T/¥", tpy / 1_000_000)
+            return String(format: "%.1fM T/%@", tpy / 1_000_000, symbol)
         } else if tpy > 1_000 {
-            return String(format: "%.1fK T/¥", tpy / 1_000)
+            return String(format: "%.1fK T/%@", tpy / 1_000, symbol)
         }
         return ""
     }

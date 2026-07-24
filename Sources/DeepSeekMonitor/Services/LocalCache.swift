@@ -94,12 +94,16 @@ final class LocalCache {
             isWidgetEnabled: isNativeWidgetEnabled,
             totalBalance: dashboard.totalBalance,
             isAccountAvailable: dashboard.isAccountAvailable,
+            balanceCurrencyCode: dashboard.balanceCurrencyCode,
+            usageCurrencyCode: dashboard.usageCurrencyCode,
             currentDayCost: dashboard.currentDayCost,
             currentMonthCost: dashboard.currentMonthCost,
             flashTotalTokens: dashboard.flashTotalTokens,
             flashCostInCents: dashboard.flashCostInCents,
             proTotalTokens: dashboard.proTotalTokens,
             proCostInCents: dashboard.proCostInCents,
+            balanceUpdatedAt: dashboard.balanceLastUpdated ?? dashboard.lastUpdated,
+            usageUpdatedAt: dashboard.usageLastUpdated ?? dashboard.lastUpdated,
             lastUpdated: dashboard.lastUpdated
         )
 
@@ -121,6 +125,8 @@ struct DashboardCache: Codable {
     let totalBalance: Double
     let grantedBalance: Double
     let toppedUpBalance: Double
+    let balanceCurrencyCode: String
+    let usageCurrencyCode: String
     let currentDayCost: Double
     let currentMonthCost: Double
     let flashTotalTokens: Int
@@ -128,6 +134,8 @@ struct DashboardCache: Codable {
     let proTotalTokens: Int
     let proCostInCents: Int
     let dailyUsage: [String: Int]  // "2026-05-01" -> tokens
+    let balanceLastUpdated: Date?
+    let usageLastUpdated: Date?
     let lastUpdated: Date
 
     enum CodingKeys: String, CodingKey {
@@ -135,6 +143,8 @@ struct DashboardCache: Codable {
         case totalBalance
         case grantedBalance
         case toppedUpBalance
+        case balanceCurrencyCode
+        case usageCurrencyCode
         case currentDayCost
         case currentMonthCost
         case flashTotalTokens
@@ -142,6 +152,8 @@ struct DashboardCache: Codable {
         case proTotalTokens
         case proCostInCents
         case dailyUsage
+        case balanceLastUpdated
+        case usageLastUpdated
         case lastUpdated
     }
 
@@ -150,6 +162,8 @@ struct DashboardCache: Codable {
         totalBalance: Double,
         grantedBalance: Double,
         toppedUpBalance: Double,
+        balanceCurrencyCode: String,
+        usageCurrencyCode: String,
         currentDayCost: Double,
         currentMonthCost: Double,
         flashTotalTokens: Int,
@@ -157,12 +171,16 @@ struct DashboardCache: Codable {
         proTotalTokens: Int,
         proCostInCents: Int,
         dailyUsage: [String: Int],
+        balanceLastUpdated: Date?,
+        usageLastUpdated: Date?,
         lastUpdated: Date
     ) {
         self.isAccountAvailable = isAccountAvailable
         self.totalBalance = totalBalance
         self.grantedBalance = grantedBalance
         self.toppedUpBalance = toppedUpBalance
+        self.balanceCurrencyCode = normalizedCurrencyCode(balanceCurrencyCode)
+        self.usageCurrencyCode = normalizedCurrencyCode(usageCurrencyCode)
         self.currentDayCost = currentDayCost
         self.currentMonthCost = currentMonthCost
         self.flashTotalTokens = flashTotalTokens
@@ -170,6 +188,8 @@ struct DashboardCache: Codable {
         self.proTotalTokens = proTotalTokens
         self.proCostInCents = proCostInCents
         self.dailyUsage = dailyUsage
+        self.balanceLastUpdated = balanceLastUpdated
+        self.usageLastUpdated = usageLastUpdated
         self.lastUpdated = lastUpdated
     }
 
@@ -179,6 +199,12 @@ struct DashboardCache: Codable {
         totalBalance = try container.decode(Double.self, forKey: .totalBalance)
         grantedBalance = try container.decode(Double.self, forKey: .grantedBalance)
         toppedUpBalance = try container.decode(Double.self, forKey: .toppedUpBalance)
+        balanceCurrencyCode = normalizedCurrencyCode(
+            try container.decodeIfPresent(String.self, forKey: .balanceCurrencyCode) ?? "CNY"
+        )
+        usageCurrencyCode = normalizedCurrencyCode(
+            try container.decodeIfPresent(String.self, forKey: .usageCurrencyCode) ?? balanceCurrencyCode
+        )
         currentDayCost = try container.decodeIfPresent(Double.self, forKey: .currentDayCost) ?? 0
         currentMonthCost = try container.decodeIfPresent(Double.self, forKey: .currentMonthCost) ?? 0
         flashTotalTokens = try container.decode(Int.self, forKey: .flashTotalTokens)
@@ -187,5 +213,7 @@ struct DashboardCache: Codable {
         proCostInCents = try container.decode(Int.self, forKey: .proCostInCents)
         dailyUsage = try container.decode([String: Int].self, forKey: .dailyUsage)
         lastUpdated = try container.decode(Date.self, forKey: .lastUpdated)
+        balanceLastUpdated = try container.decodeIfPresent(Date.self, forKey: .balanceLastUpdated) ?? lastUpdated
+        usageLastUpdated = try container.decodeIfPresent(Date.self, forKey: .usageLastUpdated) ?? lastUpdated
     }
 }

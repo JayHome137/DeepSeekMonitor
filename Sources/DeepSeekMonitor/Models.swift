@@ -1,5 +1,76 @@
 import Foundation
 
+enum UsageTime {
+    static let timeZone = TimeZone(secondsFromGMT: 0)!
+
+    static var calendar: Calendar {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = timeZone
+        return calendar
+    }
+
+    static func formatter(_ dateFormat: String) -> DateFormatter {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = timeZone
+        formatter.dateFormat = dateFormat
+        return formatter
+    }
+
+    static func day(from raw: String) -> Date? {
+        guard let date = formatter("yyyy-MM-dd").date(from: raw) else { return nil }
+        return calendar.startOfDay(for: date)
+    }
+
+    static func isSameDay(_ raw: String, as referenceDate: Date) -> Bool {
+        guard let date = day(from: raw) else { return false }
+        return calendar.isDate(date, inSameDayAs: referenceDate)
+    }
+
+    static func isSameMonth(_ raw: String, as referenceDate: Date) -> Bool {
+        guard let date = day(from: raw) else { return false }
+        let dateComponents = calendar.dateComponents([.year, .month], from: date)
+        let referenceComponents = calendar.dateComponents([.year, .month], from: referenceDate)
+        return dateComponents == referenceComponents
+    }
+}
+
+func normalizedCurrencyCode(_ raw: String) -> String {
+    let normalized = raw.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
+    return normalized.isEmpty ? "CNY" : normalized
+}
+
+func currencySymbol(for currencyCode: String) -> String {
+    switch normalizedCurrencyCode(currencyCode) {
+    case "CNY": return "¥"
+    case "USD": return "$"
+    default: return "\(normalizedCurrencyCode(currencyCode)) "
+    }
+}
+
+func formattedCurrency(_ value: Double, currencyCode: String) -> String {
+    "\(currencySymbol(for: currencyCode))\(String(format: "%.2f", value))"
+}
+
+func formattedCurrency(_ value: Decimal, currencyCode: String) -> String {
+    formattedCurrency(NSDecimalNumber(decimal: value).doubleValue, currencyCode: currencyCode)
+}
+
+func decimalAmount(fromCents cents: Int) -> Decimal {
+    Decimal(cents) / Decimal(100)
+}
+
+func roundedCents(from amount: Decimal) -> Int {
+    var amount = amount
+    var hundred = Decimal(100)
+    var cents = Decimal()
+    NSDecimalMultiply(&cents, &amount, &hundred, .plain)
+
+    var rounded = Decimal()
+    NSDecimalRound(&rounded, &cents, 0, .plain)
+    return NSDecimalNumber(decimal: rounded).intValue
+}
+
 // MARK: - DeepSeek API 响应模型
 
 /// 余额查询响应
@@ -55,9 +126,44 @@ struct UsageRecord: Codable, Identifiable {
     let inputCacheHitTokens: Int
     let inputCacheMissTokens: Int
     let completionTokens: Int   // 输出 Token
-    let costInCents: Int        // 费用（分）
+    let costByCurrency: [String: Decimal]
     let date: String            // 日期 "2026-01-01"
     let requestCount: Int       // 请求次数
+
+    var primaryCurrencyCode: String {
+        if costByCurrency.keys.contains("CNY") {
+            return "CNY"
+        }
+        return costByCurrency.keys.sorted().first ?? "CNY"
+    }
+
+    var costInCents: Int {
+        costInCents(for: primaryCurrencyCode)
+    }
+
+    func costAmount(for currencyCode: String) -> Decimal {
+        let normalized = normalizedCurrencyCode(currencyCode)
+        return costByCurrency[normalized] ?? .zero
+    }
+
+    func costInCents(for currencyCode: String) -> Int {
+        roundedCents(from: costAmount(for: currencyCode))
+    }
+
+    func replacingCosts(_ costs: [String: Decimal]) -> UsageRecord {
+        UsageRecord(
+            id: id,
+            modelName: modelName,
+            totalTokens: totalTokens,
+            promptTokens: promptTokens,
+            inputCacheHitTokens: inputCacheHitTokens,
+            inputCacheMissTokens: inputCacheMissTokens,
+            completionTokens: completionTokens,
+            costByCurrency: costs,
+            date: date,
+            requestCount: requestCount
+        )
+    }
 
     enum CodingKeys: String, CodingKey {
         case id
@@ -68,6 +174,8 @@ struct UsageRecord: Codable, Identifiable {
         case inputCacheMissTokens = "input_cache_miss_tokens"
         case completionTokens = "completion_tokens"
         case costInCents = "cost_in_cents"
+        case costByCurrency = "cost_by_currency"
+        case currency
         case date
         case requestCount = "request_count"
     }
@@ -91,7 +199,33 @@ struct UsageRecord: Codable, Identifiable {
         self.inputCacheHitTokens = inputCacheHitTokens
         self.inputCacheMissTokens = inputCacheMissTokens
         self.completionTokens = completionTokens
-        self.costInCents = costInCents
+        self.costByCurrency = ["CNY": decimalAmount(fromCents: costInCents)]
+        self.date = date
+        self.requestCount = requestCount
+    }
+
+    init(
+        id: String,
+        modelName: String,
+        totalTokens: Int,
+        promptTokens: Int,
+        inputCacheHitTokens: Int = 0,
+        inputCacheMissTokens: Int = 0,
+        completionTokens: Int,
+        costByCurrency: [String: Decimal],
+        date: String,
+        requestCount: Int = 0
+    ) {
+        self.id = id
+        self.modelName = modelName
+        self.totalTokens = totalTokens
+        self.promptTokens = promptTokens
+        self.inputCacheHitTokens = inputCacheHitTokens
+        self.inputCacheMissTokens = inputCacheMissTokens
+        self.completionTokens = completionTokens
+        self.costByCurrency = Dictionary(uniqueKeysWithValues: costByCurrency.map {
+            (normalizedCurrencyCode($0.key), $0.value)
+        })
         self.date = date
         self.requestCount = requestCount
     }
@@ -105,7 +239,15 @@ struct UsageRecord: Codable, Identifiable {
         inputCacheHitTokens = try container.decodeIfPresent(Int.self, forKey: .inputCacheHitTokens) ?? 0
         inputCacheMissTokens = try container.decodeIfPresent(Int.self, forKey: .inputCacheMissTokens) ?? 0
         completionTokens = try container.decode(Int.self, forKey: .completionTokens)
-        costInCents = try container.decode(Int.self, forKey: .costInCents)
+        if let decodedCosts = try container.decodeIfPresent([String: Decimal].self, forKey: .costByCurrency) {
+            costByCurrency = Dictionary(uniqueKeysWithValues: decodedCosts.map {
+                (normalizedCurrencyCode($0.key), $0.value)
+            })
+        } else {
+            let legacyCents = try container.decodeIfPresent(Int.self, forKey: .costInCents) ?? 0
+            let currency = try container.decodeIfPresent(String.self, forKey: .currency) ?? "CNY"
+            costByCurrency = [normalizedCurrencyCode(currency): decimalAmount(fromCents: legacyCents)]
+        }
         date = try container.decode(String.self, forKey: .date)
         requestCount = try container.decodeIfPresent(Int.self, forKey: .requestCount) ?? 0
     }
@@ -119,7 +261,9 @@ struct UsageRecord: Codable, Identifiable {
         try container.encode(inputCacheHitTokens, forKey: .inputCacheHitTokens)
         try container.encode(inputCacheMissTokens, forKey: .inputCacheMissTokens)
         try container.encode(completionTokens, forKey: .completionTokens)
+        try container.encode(costByCurrency, forKey: .costByCurrency)
         try container.encode(costInCents, forKey: .costInCents)
+        try container.encode(primaryCurrencyCode, forKey: .currency)
         try container.encode(date, forKey: .date)
         try container.encode(requestCount, forKey: .requestCount)
     }
@@ -175,14 +319,19 @@ struct ModelUsageSummary: Identifiable {
     let id = UUID()
     let model: DeepSeekModel
     let totalTokens: Int
-    let costInCents: Int
+    let costAmount: Decimal
+    let currencyCode: String
+
+    var costInCents: Int {
+        roundedCents(from: costAmount)
+    }
 
     var totalTokensFormatted: String {
         formatNumber(totalTokens)
     }
 
     var costFormatted: String {
-        String(format: "¥%.2f", Double(costInCents) / 100.0)
+        formattedCurrency(costAmount, currencyCode: currencyCode)
     }
 }
 
@@ -223,11 +372,15 @@ struct WidgetSnapshot: Codable {
     let isWidgetEnabled: Bool
     let totalBalance: Double
     let isAccountAvailable: Bool
+    let balanceCurrencyCode: String
+    let usageCurrencyCode: String
     let currentDayCost: Double
     let currentMonthCost: Double
     let flashTotalTokens: Int
     let flashCostInCents: Int
     let proTotalTokens: Int
     let proCostInCents: Int
+    let balanceUpdatedAt: Date
+    let usageUpdatedAt: Date
     let lastUpdated: Date
 }

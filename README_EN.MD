@@ -2,7 +2,7 @@
 
 [中文 README](README.md) | The default README is now Chinese. This file keeps the English version of the same content.
 
-macOS menu bar app for monitoring DeepSeek V4 Flash / Pro balance, token usage, and billing. The current local release is **v1.4.7**.
+macOS menu bar app for monitoring DeepSeek V4 Flash / Pro balance, token usage, and billing. The current release is **v1.4.8**.
 
 Requires **macOS 14 or later**; compatible with **Apple Silicon** and **Intel Macs** that can run macOS 14+.
 
@@ -18,13 +18,13 @@ Requires **macOS 14 or later**; compatible with **Apple Silicon** and **Intel Ma
 
 ## Features
 
-- **Menu bar dashboard** — balance, account availability, daily cost, monthly cost, V4 Flash / Pro usage, and 7-day token trend.
+- **Menu bar dashboard** — balance, account availability, UTC+0 daily/monthly cost, V4 Flash / Pro usage, and a 7-day token trend.
 - **Native WidgetKit desktop widget** — medium-size macOS widget with glass-style UI, account balance, daily/monthly spend, and model cost shortcuts.
 - **Model detail side panel** — click V4 Flash or V4 Pro to open a side panel aligned to the main dashboard size, with daily token and request charts.
 - **Deep link widget actions** — widget rows open the model detail panel directly, without opening the full dashboard first.
-- **Usage import fallback** — import DeepSeek Usage CSV/ZIP exports manually or from the watched sync folder when the official usage endpoint is unavailable.
-- **Automatic usage export** — optional WKWebView automation for DeepSeek Platform usage export.
-- **Configurable refresh** — 30 seconds, 60 seconds, 2 minutes, or 5 minutes.
+- **Usage import fallback** — import DeepSeek Usage ZIP/CSV exports when the official usage endpoint is unavailable; official ZIP files use both `amount.csv` and `cost.csv` for precise costs and currencies.
+- **Automatic usage export** — optional WKWebView automation at 5, 10, or 30-minute intervals.
+- **Balance refresh** — refresh the account balance every 30 seconds, 60 seconds, 2 minutes, or 5 minutes.
 - **Launch at login** — optional macOS login item so the widget data stays fresh after sign-in.
 - **Local cache** — dashboard and widget data are available immediately after app restart.
 - **Local-only storage** — API key, cached usage, and widget snapshots stay on this Mac.
@@ -85,7 +85,7 @@ For this project only, the release script also clears stale DeepSeekMonitor syst
 4. Enable **原生小组件数据** if you want the macOS desktop widget to sync data.
 5. Add the **DeepSeek Monitor** widget from the macOS widget gallery.
 
-If DeepSeek's `/v1/usage` endpoint is unavailable for your account, use Settings to import CSV/ZIP usage exports or enable the automatic export helper.
+If DeepSeek's `/v1/usage` endpoint is unavailable for your account, use Settings to import an official Usage ZIP or enable the automatic export helper. Usage dates follow DeepSeek's UTC+0 reporting boundary, and platform data may lag by about five minutes.
 
 ## Architecture
 

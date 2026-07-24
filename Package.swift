@@ -30,6 +30,11 @@ let package = Package(
                 .linkedFramework("SwiftUI"),
                 .linkedFramework("Foundation")
             ]
+        ),
+        .testTarget(
+            name: "DeepSeekMonitorTests",
+            dependencies: ["DeepSeekMonitor"],
+            path: "Tests/DeepSeekMonitorTests"
         )
     ]
 )

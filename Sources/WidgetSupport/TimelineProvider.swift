@@ -2,17 +2,56 @@ import WidgetKit
 
 // MARK: - Shared Data Model
 
-struct WidgetSnapshot: Codable {
+struct WidgetSnapshot: Decodable {
     let isWidgetEnabled: Bool?
     let totalBalance: Double
     let isAccountAvailable: Bool
+    let balanceCurrencyCode: String
+    let usageCurrencyCode: String
     let currentDayCost: Double
     let currentMonthCost: Double
     let flashTotalTokens: Int
     let flashCostInCents: Int
     let proTotalTokens: Int
     let proCostInCents: Int
+    let balanceUpdatedAt: Date
+    let usageUpdatedAt: Date
     let lastUpdated: Date
+
+    private enum CodingKeys: String, CodingKey {
+        case isWidgetEnabled
+        case totalBalance
+        case isAccountAvailable
+        case balanceCurrencyCode
+        case usageCurrencyCode
+        case currentDayCost
+        case currentMonthCost
+        case flashTotalTokens
+        case flashCostInCents
+        case proTotalTokens
+        case proCostInCents
+        case balanceUpdatedAt
+        case usageUpdatedAt
+        case lastUpdated
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        isWidgetEnabled = try container.decodeIfPresent(Bool.self, forKey: .isWidgetEnabled)
+        totalBalance = try container.decode(Double.self, forKey: .totalBalance)
+        isAccountAvailable = try container.decode(Bool.self, forKey: .isAccountAvailable)
+        balanceCurrencyCode = try container.decodeIfPresent(String.self, forKey: .balanceCurrencyCode) ?? "CNY"
+        usageCurrencyCode = try container.decodeIfPresent(String.self, forKey: .usageCurrencyCode) ?? balanceCurrencyCode
+        currentDayCost = try container.decode(Double.self, forKey: .currentDayCost)
+        currentMonthCost = try container.decode(Double.self, forKey: .currentMonthCost)
+        flashTotalTokens = try container.decode(Int.self, forKey: .flashTotalTokens)
+        flashCostInCents = try container.decode(Int.self, forKey: .flashCostInCents)
+        proTotalTokens = try container.decode(Int.self, forKey: .proTotalTokens)
+        proCostInCents = try container.decode(Int.self, forKey: .proCostInCents)
+        lastUpdated = try container.decode(Date.self, forKey: .lastUpdated)
+        balanceUpdatedAt = try container.decodeIfPresent(Date.self, forKey: .balanceUpdatedAt) ?? lastUpdated
+        usageUpdatedAt = try container.decodeIfPresent(Date.self, forKey: .usageUpdatedAt) ?? lastUpdated
+    }
 }
 
 // MARK: - Timeline Entry
@@ -22,13 +61,15 @@ struct WidgetEntry: TimelineEntry {
     let isWidgetEnabled: Bool
     let balance: Double
     let isAvailable: Bool
+    let balanceCurrencyCode: String
+    let usageCurrencyCode: String
     let dayCost: Double
     let monthCost: Double
     let flashTokens: Int
     let flashCostCents: Int
     let proTokens: Int
     let proCostCents: Int
-    let lastUpdated: Date
+    let usageUpdatedAt: Date
     let hasData: Bool
 
     static let placeholder = WidgetEntry(
@@ -36,13 +77,15 @@ struct WidgetEntry: TimelineEntry {
         isWidgetEnabled: true,
         balance: 0,
         isAvailable: false,
+        balanceCurrencyCode: "CNY",
+        usageCurrencyCode: "CNY",
         dayCost: 0,
         monthCost: 0,
         flashTokens: 0,
         flashCostCents: 0,
         proTokens: 0,
         proCostCents: 0,
-        lastUpdated: Date(),
+        usageUpdatedAt: Date(),
         hasData: false
     )
 }
@@ -94,13 +137,15 @@ struct Provider: TimelineProvider {
                 isWidgetEnabled: false,
                 balance: 0,
                 isAvailable: false,
+                balanceCurrencyCode: "CNY",
+                usageCurrencyCode: "CNY",
                 dayCost: 0,
                 monthCost: 0,
                 flashTokens: 0,
                 flashCostCents: 0,
                 proTokens: 0,
                 proCostCents: 0,
-                lastUpdated: Date(),
+                usageUpdatedAt: Date(),
                 hasData: false
             )
         }
@@ -113,13 +158,15 @@ struct Provider: TimelineProvider {
             isWidgetEnabled: true,
             balance: s.totalBalance,
             isAvailable: s.isAccountAvailable,
+            balanceCurrencyCode: s.balanceCurrencyCode,
+            usageCurrencyCode: s.usageCurrencyCode,
             dayCost: s.currentDayCost,
             monthCost: s.currentMonthCost,
             flashTokens: s.flashTotalTokens,
             flashCostCents: s.flashCostInCents,
             proTokens: s.proTotalTokens,
             proCostCents: s.proCostInCents,
-            lastUpdated: s.lastUpdated,
+            usageUpdatedAt: s.usageUpdatedAt,
             hasData: true
         )
     }

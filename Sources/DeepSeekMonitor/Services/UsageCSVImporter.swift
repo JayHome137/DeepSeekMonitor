@@ -24,7 +24,25 @@ enum UsageCSVImportError: LocalizedError {
 }
 
 enum UsageCSVImporter {
-    static func importRecords(from url: URL) throws -> [UsageRecord] {
+    static func importRecords(
+        from url: URL,
+        costURL: URL? = nil,
+        defaultCurrencyCode: String = "CNY"
+    ) throws -> [UsageRecord] {
+        let amountRecords = try importBaseRecords(
+            from: url,
+            defaultCurrencyCode: defaultCurrencyCode
+        )
+        guard let costURL else { return amountRecords }
+
+        let exactCosts = try importCostExport(from: costURL)
+        return merge(amountRecords: amountRecords, exactCosts: exactCosts)
+    }
+
+    private static func importBaseRecords(
+        from url: URL,
+        defaultCurrencyCode: String
+    ) throws -> [UsageRecord] {
         let raw: String
         if let utf8 = try? String(contentsOf: url, encoding: .utf8) {
             raw = utf8
@@ -48,7 +66,11 @@ enum UsageCSVImporter {
              firstIndex(in: headers, matching: ["amount"]) != nil)
 
         if looksLikeAmountExport {
-            return try importAmountExport(rawText: raw, rows: rows, headers: headers)
+            return try importAmountExport(
+                rows: rows,
+                headers: headers,
+                defaultCurrencyCode: defaultCurrencyCode
+            )
         }
 
         let dateIndex = firstIndex(in: headers, matching: ["date", "day", "日期", "时间"])
@@ -57,6 +79,7 @@ enum UsageCSVImporter {
         let outputIndex = firstIndex(in: headers, matching: ["completiontokens", "outputtokens", "输出token", "输出tokens"])
         let totalIndex = firstIndex(in: headers, matching: ["totaltokens", "总token", "总tokens"])
         let amountIndex = firstIndex(in: headers, matching: ["amount", "cost", "fee", "金额", "费用", "花费"])
+        let currencyIndex = firstIndex(in: headers, matching: ["currency", "币种", "货币"])
         let requestCountIndex = firstIndex(in: headers, matching: ["requestcount", "requests", "请求次数"])
 
         guard let resolvedDateIndex = dateIndex, let resolvedModelIndex = modelIndex else {
@@ -76,12 +99,16 @@ enum UsageCSVImporter {
             let parsedTotalTokens = parseInteger(value(at: totalIndex, in: row))
             let totalTokens = max(parsedTotalTokens, promptTokens + completionTokens)
             let requestCount = parseInteger(value(at: requestCountIndex, in: row))
-            let costInCents = parseAmountInCents(
+            let costAmount = parseAmount(
                 value(at: amountIndex, in: row),
                 header: amountIndex.flatMap { headers[$0] }
             )
+            let rawCurrency = value(at: currencyIndex, in: row)
+            let currencyCode = rawCurrency.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                ? normalizedCurrencyCode(defaultCurrencyCode)
+                : normalizedCurrencyCode(rawCurrency)
 
-            guard totalTokens > 0 || costInCents > 0 || requestCount > 0 else { continue }
+            guard totalTokens > 0 || costAmount > 0 || requestCount > 0 else { continue }
 
             records.append(
                 UsageRecord(
@@ -92,7 +119,7 @@ enum UsageCSVImporter {
                     inputCacheHitTokens: 0,
                     inputCacheMissTokens: promptTokens,
                     completionTokens: completionTokens,
-                    costInCents: costInCents,
+                    costByCurrency: [currencyCode: costAmount],
                     date: date,
                     requestCount: requestCount
                 )
@@ -110,22 +137,11 @@ enum UsageCSVImporter {
         return records
     }
 
-    private static func importAmountExport(rawText: String, rows: [[String]], headers: [String]) throws -> [UsageRecord] {
-        // DeepSeek 导出的 amount CSV 结构稳定，优先按原始文本逐行解析，
-        // 避免手写 CSV 解析器在某些编码/换行场景下把整行吃成一个字段。
-        let rawLines = rawText
-            .replacingOccurrences(of: "\r\n", with: "\n")
-            .replacingOccurrences(of: "\r", with: "\n")
-            .split(separator: "\n", omittingEmptySubsequences: true)
-            .map(String.init)
-
-        if rawLines.count > 1 {
-            let directRecords = importAmountExportByColumns(lines: rawLines)
-            if directRecords.isEmpty == false {
-                return directRecords
-            }
-        }
-
+    private static func importAmountExport(
+        rows: [[String]],
+        headers: [String],
+        defaultCurrencyCode: String
+    ) throws -> [UsageRecord] {
         guard let dateIndex = firstIndex(in: headers, matching: ["utcdate", "date", "day", "日期", "时间"]),
               let modelIndex = firstIndex(in: headers, matching: ["model", "模型"]),
               let typeIndex = firstIndex(in: headers, matching: ["type", "类型"]),
@@ -140,7 +156,7 @@ enum UsageCSVImporter {
             var inputCacheMissTokens = 0
             var completionTokens = 0
             var totalTokens = 0
-            var costInCents = 0
+            var costAmount = Decimal.zero
             var requestCount = 0
         }
 
@@ -160,7 +176,7 @@ enum UsageCSVImporter {
 
             let entryType = normalizeHeader(value(at: typeIndex, in: row))
             let amountValue = parseInteger(value(at: amountIndex, in: row))
-            let costInCents = parseUnitPriceInCents(
+            let costAmount = parseUnitCost(
                 value(at: priceIndex, in: row),
                 multiplier: amountValue
             )
@@ -175,7 +191,7 @@ enum UsageCSVImporter {
                 continue
             }
 
-            guard amountValue > 0 || costInCents > 0 else { continue }
+            guard amountValue > 0 || costAmount > 0 else { continue }
             guard entryType.contains("token") else { continue }
             validTokenRowCount += 1
 
@@ -192,7 +208,7 @@ enum UsageCSVImporter {
                 aggregate.inputCacheMissTokens += amountValue
             }
             aggregate.totalTokens += amountValue
-            aggregate.costInCents += costInCents
+            aggregate.costAmount += costAmount
             aggregates[key] = aggregate
         }
 
@@ -206,7 +222,7 @@ enum UsageCSVImporter {
                 inputCacheHitTokens: aggregate.inputCacheHitTokens,
                 inputCacheMissTokens: aggregate.inputCacheMissTokens,
                 completionTokens: aggregate.completionTokens,
-                costInCents: aggregate.costInCents,
+                costByCurrency: [normalizedCurrencyCode(defaultCurrencyCode): aggregate.costAmount],
                 date: parts[0],
                 requestCount: aggregate.requestCount
             )
@@ -228,84 +244,100 @@ enum UsageCSVImporter {
         return records
     }
 
-    private static func importAmountExportByColumns(lines: [String]) -> [UsageRecord] {
-        struct Aggregate {
-            var promptTokens = 0
-            var inputCacheHitTokens = 0
-            var inputCacheMissTokens = 0
-            var completionTokens = 0
-            var totalTokens = 0
-            var costInCents = 0
-            var requestCount = 0
+    private static func importCostExport(from url: URL) throws -> [String: [String: Decimal]] {
+        let raw: String
+        if let utf8 = try? String(contentsOf: url, encoding: .utf8) {
+            raw = utf8
+        } else if let unicode = try? String(contentsOf: url, encoding: .unicode) {
+            raw = unicode
+        } else {
+            throw UsageCSVImportError.unreadableFile
         }
 
-        var aggregates: [String: Aggregate] = [:]
+        let rows = parseCSV(raw)
+        guard let headerRow = rows.first, headerRow.isEmpty == false else {
+            throw UsageCSVImportError.emptyFile
+        }
 
-        for line in lines.dropFirst() {
-            let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard trimmed.isEmpty == false else { continue }
+        let headers = headerRow.map(normalizeHeader)
+        guard let dateIndex = firstIndex(in: headers, matching: ["utcdate", "date", "day", "日期", "时间"]),
+              let modelIndex = firstIndex(in: headers, matching: ["model", "模型"]),
+              let costIndex = firstIndex(in: headers, matching: ["cost", "amount", "金额", "费用"]),
+              let currencyIndex = firstIndex(in: headers, matching: ["currency", "币种", "货币"]) else {
+            throw UsageCSVImportError.unsupportedColumns
+        }
 
-            let columns = trimmed
-                .split(separator: ",", omittingEmptySubsequences: false)
-                .map { String($0).trimmingCharacters(in: .whitespacesAndNewlines) }
-
-            guard columns.count >= 8 else { continue }
-
-            guard let date = normalizedDate(from: columns[1]),
-                  let model = normalizedModel(from: columns[2]) else {
+        var costs: [String: [String: Decimal]] = [:]
+        for row in rows.dropFirst() {
+            guard let date = normalizedDate(from: value(at: dateIndex, in: row)),
+                  let model = normalizedModel(from: value(at: modelIndex, in: row)) else {
                 continue
             }
 
-            let entryType = normalizeHeader(columns[5])
-            let amountValue = parseInteger(columns[7])
-            let costInCents = parseUnitPriceInCents(columns[6], multiplier: amountValue)
+            let amount = parseDecimal(value(at: costIndex, in: row))
+            guard amount != .zero else { continue }
 
+            let currency = normalizedCurrencyCode(value(at: currencyIndex, in: row))
             let key = "\(date)|\(model)"
-            var aggregate = aggregates[key] ?? Aggregate()
+            var byCurrency = costs[key] ?? [:]
+            byCurrency[currency, default: .zero] += amount
+            costs[key] = byCurrency
+        }
 
-            if entryType.contains("requestcount") {
-                guard amountValue > 0 else { continue }
-                aggregate.requestCount += amountValue
-                aggregates[key] = aggregate
+        return costs
+    }
+
+    private static func merge(
+        amountRecords: [UsageRecord],
+        exactCosts: [String: [String: Decimal]]
+    ) -> [UsageRecord] {
+        var recordsByKey: [String: UsageRecord] = [:]
+        for record in amountRecords {
+            let key = "\(record.date)|\(record.modelName)"
+            guard let existing = recordsByKey[key] else {
+                recordsByKey[key] = record
                 continue
             }
 
-            guard amountValue > 0 || costInCents > 0 else { continue }
-            guard entryType.contains("token") else { continue }
-
-            if entryType.contains("outputtokens") {
-                aggregate.completionTokens += amountValue
-            } else if entryType.contains("inputcachehittokens") {
-                aggregate.promptTokens += amountValue
-                aggregate.inputCacheHitTokens += amountValue
-            } else if entryType.contains("inputcachemisstokens") {
-                aggregate.promptTokens += amountValue
-                aggregate.inputCacheMissTokens += amountValue
-            } else {
-                aggregate.promptTokens += amountValue
-                aggregate.inputCacheMissTokens += amountValue
+            var combinedCosts = existing.costByCurrency
+            for (currency, amount) in record.costByCurrency {
+                combinedCosts[currency, default: .zero] += amount
             }
-            aggregate.totalTokens += amountValue
-            aggregate.costInCents += costInCents
-            aggregates[key] = aggregate
-        }
-
-        return aggregates.map { key, aggregate in
-            let parts = key.split(separator: "|", maxSplits: 1).map(String.init)
-            return UsageRecord(
+            recordsByKey[key] = UsageRecord(
                 id: key,
-                modelName: parts[1],
-                totalTokens: aggregate.totalTokens,
-                promptTokens: aggregate.promptTokens,
-                inputCacheHitTokens: aggregate.inputCacheHitTokens,
-                inputCacheMissTokens: aggregate.inputCacheMissTokens,
-                completionTokens: aggregate.completionTokens,
-                costInCents: aggregate.costInCents,
-                date: parts[0],
-                requestCount: aggregate.requestCount
+                modelName: record.modelName,
+                totalTokens: existing.totalTokens + record.totalTokens,
+                promptTokens: existing.promptTokens + record.promptTokens,
+                inputCacheHitTokens: existing.inputCacheHitTokens + record.inputCacheHitTokens,
+                inputCacheMissTokens: existing.inputCacheMissTokens + record.inputCacheMissTokens,
+                completionTokens: existing.completionTokens + record.completionTokens,
+                costByCurrency: combinedCosts,
+                date: record.date,
+                requestCount: existing.requestCount + record.requestCount
             )
         }
-        .sorted { lhs, rhs in
+
+        for (key, costs) in exactCosts {
+            if let record = recordsByKey[key] {
+                recordsByKey[key] = record.replacingCosts(costs)
+                continue
+            }
+
+            let parts = key.split(separator: "|", maxSplits: 1).map(String.init)
+            guard parts.count == 2 else { continue }
+            recordsByKey[key] = UsageRecord(
+                id: key,
+                modelName: parts[1],
+                totalTokens: 0,
+                promptTokens: 0,
+                completionTokens: 0,
+                costByCurrency: costs,
+                date: parts[0],
+                requestCount: 0
+            )
+        }
+
+        return recordsByKey.values.sorted { lhs, rhs in
             if lhs.date == rhs.date {
                 return lhs.modelName < rhs.modelName
             }
@@ -330,6 +362,7 @@ enum UsageCSVImporter {
         text
             .trimmingCharacters(in: .whitespacesAndNewlines)
             .lowercased()
+            .replacingOccurrences(of: "\u{FEFF}", with: "")
             .replacingOccurrences(of: "_", with: "")
             .replacingOccurrences(of: "-", with: "")
             .replacingOccurrences(of: " ", with: "")
@@ -364,11 +397,13 @@ enum UsageCSVImporter {
 
         let output = DateFormatter()
         output.locale = Locale(identifier: "en_US_POSIX")
+        output.timeZone = UsageTime.timeZone
         output.dateFormat = "yyyy-MM-dd"
 
         for pattern in fmts {
             let formatter = DateFormatter()
             formatter.locale = Locale(identifier: "en_US_POSIX")
+            formatter.timeZone = UsageTime.timeZone
             formatter.dateFormat = pattern
             if let date = formatter.date(from: text) {
                 return output.string(from: date)
@@ -412,49 +447,36 @@ enum UsageCSVImporter {
         return 0
     }
 
-    private static func parseAmountInCents(_ raw: String, header: String?) -> Int {
+    private static func parseDecimal(_ raw: String) -> Decimal {
         let cleaned = raw
             .replacingOccurrences(of: ",", with: "")
             .replacingOccurrences(of: "¥", with: "")
             .replacingOccurrences(of: "￥", with: "")
+            .replacingOccurrences(of: "$", with: "")
             .trimmingCharacters(in: .whitespacesAndNewlines)
-
-        guard cleaned.isEmpty == false else { return 0 }
-
-        let normalizedHeader = header ?? ""
-        if normalizedHeader.contains("cent") || normalizedHeader.contains("分") {
-            return Int(cleaned) ?? 0
-        }
-
-        if let decimal = Decimal(string: cleaned) {
-            var amount = decimal
-            var multiplier = Decimal(100)
-            var result = Decimal()
-            NSDecimalMultiply(&result, &amount, &multiplier, .plain)
-            return NSDecimalNumber(decimal: result).intValue
-        }
-
-        return Int(cleaned) ?? 0
+        return Decimal(string: cleaned, locale: Locale(identifier: "en_US_POSIX")) ?? .zero
     }
 
-    private static func parseUnitPriceInCents(_ raw: String, multiplier: Int) -> Int {
-        let cleaned = raw
-            .replacingOccurrences(of: ",", with: "")
-            .trimmingCharacters(in: .whitespacesAndNewlines)
+    private static func parseAmount(_ raw: String, header: String?) -> Decimal {
+        let amount = parseDecimal(raw)
+        let normalizedHeader = header ?? ""
+        if normalizedHeader.contains("cent") || normalizedHeader.contains("分") {
+            return amount / Decimal(100)
+        }
+        return amount
+    }
 
-        guard cleaned.isEmpty == false, multiplier > 0, let decimal = Decimal(string: cleaned) else {
-            return 0
+    private static func parseUnitCost(_ raw: String, multiplier: Int) -> Decimal {
+        let parsedUnitPrice = parseDecimal(raw)
+        guard multiplier > 0, parsedUnitPrice != .zero else {
+            return .zero
         }
 
-        var unitPrice = decimal
+        var unitPrice = parsedUnitPrice
         var amount = Decimal(multiplier)
         var cost = Decimal()
         NSDecimalMultiply(&cost, &unitPrice, &amount, .plain)
-
-        var hundred = Decimal(100)
-        var cents = Decimal()
-        NSDecimalMultiply(&cents, &cost, &hundred, .plain)
-        return NSDecimalNumber(decimal: cents).intValue
+        return cost
     }
 
     private static func parseCSV(_ text: String) -> [[String]] {
