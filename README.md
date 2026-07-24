@@ -8,13 +8,21 @@ DeepSeek Monitor 是一款 macOS 菜单栏应用，用于监控 DeepSeek V4 Flas
 
 ## 截图
 
-| 原生 WidgetKit 小组件 | 菜单栏主面板 |
-|---|---|
-| <img src="Resources/screenshots/widget-medium.png" width="360" alt="DeepSeek Monitor 原生 WidgetKit 桌面小组件" /> | <img src="Resources/screenshots/main-panel.png" width="360" alt="DeepSeek Monitor 菜单栏主面板" /> |
+### 原生 WidgetKit 小组件
 
-| 模型详情侧页 | 设置面板 |
+<p align="center">
+  <img src="Resources/screenshots/widget-medium.png" width="620" alt="DeepSeek Monitor 原生 WidgetKit 桌面小组件" />
+</p>
+
+| 菜单栏主面板 | 模型详情侧页 |
 |---|---|
-| <img src="Resources/screenshots/model-detail.png" width="350" alt="V4 Flash 模型详情侧页" /> | <img src="Resources/screenshots/settings.png" width="350" alt="DeepSeek Monitor 设置面板" /> |
+| <img src="Resources/screenshots/main-panel.png" width="360" alt="DeepSeek Monitor 菜单栏主面板" /> | <img src="Resources/screenshots/model-detail.png" width="360" alt="V4 Flash 模型详情侧页" /> |
+
+### 设置面板
+
+<p align="center">
+  <img src="Resources/screenshots/settings.png" width="460" alt="DeepSeek Monitor 设置面板" />
+</p>
 
 ## 功能
 
