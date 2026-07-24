@@ -275,7 +275,7 @@ private struct BalanceAmount: View {
     @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
-        Text(entry.hasData ? currency(entry.balance) : "¥--")
+        Text(entry.hasData ? currency(entry.balance, code: entry.balanceCurrencyCode) : "\(currencySymbol(entry.balanceCurrencyCode))--")
             .font(.system(size: size, weight: .bold, design: .rounded))
             .monospacedDigit()
             .foregroundStyle(entry.hasData ? (entry.isAvailable ? balanceColor : Color.red.opacity(0.95)) : widgetTextMuted(for: colorScheme))
@@ -292,6 +292,7 @@ private struct BalanceAmount: View {
 private struct CostPill: View {
     let label: String
     let value: Double?
+    let currencyCode: String
     @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
@@ -301,7 +302,7 @@ private struct CostPill: View {
                 .foregroundStyle(widgetTextMuted(for: colorScheme))
                 .widgetAccentable(false)
 
-            Text(value.map(currency) ?? "¥--")
+            Text(value.map { currency($0, code: currencyCode) } ?? "\(currencySymbol(currencyCode))--")
                 .font(.system(size: 12, weight: .semibold, design: .rounded))
                 .monospacedDigit()
                 .foregroundStyle(costOrange.opacity(0.98))
@@ -327,7 +328,7 @@ private struct ModelCostRow: View {
                 ModelBadge(kind: kind, size: 25)
                     .frame(maxWidth: .infinity, alignment: .leading)
 
-                Text(entry.hasData ? costFormatted(costCents) : "--")
+                Text(entry.hasData ? costFormatted(costCents, code: entry.usageCurrencyCode) : "--")
                     .font(.system(size: 13, weight: .bold, design: .rounded))
                     .monospacedDigit()
                     .foregroundStyle(entry.hasData ? widgetTextStrong(for: colorScheme) : widgetTextFaint(for: colorScheme))
@@ -437,14 +438,14 @@ private struct MediumWidgetView: View {
                 .padding(.bottom, 10)
 
             HStack(spacing: 10) {
-                CostPill(label: "今日", value: entry.hasData ? entry.dayCost : nil)
-                CostPill(label: "本月", value: entry.hasData ? entry.monthCost : nil)
+                CostPill(label: "今日", value: entry.hasData ? entry.dayCost : nil, currencyCode: entry.usageCurrencyCode)
+                CostPill(label: "本月", value: entry.hasData ? entry.monthCost : nil, currencyCode: entry.usageCurrencyCode)
             }
 
             Spacer(minLength: 0)
 
             if entry.hasData {
-                Text("更新 \(entry.lastUpdated.formatted(date: .omitted, time: .shortened))")
+                Text("用量 \(utcTime(entry.usageUpdatedAt)) · UTC+0")
                     .font(.system(size: 10, weight: .regular))
                     .foregroundStyle(widgetTextFaint(for: colorScheme))
                     .widgetAccentable(false)
@@ -482,12 +483,28 @@ private struct MediumWidgetView: View {
     }
 }
 
-private func currency(_ value: Double) -> String {
-    String(format: "¥%.2f", value)
+private func currencySymbol(_ code: String) -> String {
+    switch code.uppercased() {
+    case "CNY": return "¥"
+    case "USD": return "$"
+    default: return "\(code.uppercased()) "
+    }
 }
 
-private func costFormatted(_ cents: Int) -> String {
-    currency(Double(cents) / 100.0)
+private func currency(_ value: Double, code: String) -> String {
+    "\(currencySymbol(code))\(String(format: "%.2f", value))"
+}
+
+private func costFormatted(_ cents: Int, code: String) -> String {
+    currency(Double(cents) / 100.0, code: code)
+}
+
+private func utcTime(_ date: Date) -> String {
+    let formatter = DateFormatter()
+    formatter.locale = Locale(identifier: "zh_CN")
+    formatter.timeZone = TimeZone(secondsFromGMT: 0)
+    formatter.dateFormat = "HH:mm"
+    return formatter.string(from: date)
 }
 
 // MARK: - Preview
@@ -501,13 +518,15 @@ private func costFormatted(_ cents: Int) -> String {
         isWidgetEnabled: true,
         balance: 1234.56,
         isAvailable: true,
+        balanceCurrencyCode: "CNY",
+        usageCurrencyCode: "CNY",
         dayCost: 12.34,
         monthCost: 98.76,
         flashTokens: 150000,
         flashCostCents: 560,
         proTokens: 85000,
         proCostCents: 1230,
-        lastUpdated: Date(),
+        usageUpdatedAt: Date(),
         hasData: true
     )
 }

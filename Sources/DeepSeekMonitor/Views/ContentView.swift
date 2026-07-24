@@ -63,7 +63,7 @@ struct ContentView: View {
             }
             .buttonStyle(.plain)
             .focusEffectDisabled()
-            .help("刷新")
+            .help("刷新余额")
             .disabled(viewModel.isLoading || !viewModel.hasAPIKey)
 
             Button(action: onOpenSettings) {
@@ -92,7 +92,9 @@ struct ContentView: View {
                 totalBalance: viewModel.totalBalance,
                 currentDayCost: viewModel.currentDayCost,
                 currentMonthCost: viewModel.currentMonthCost,
-                isAvailable: viewModel.isAccountAvailable
+                isAvailable: viewModel.isAccountAvailable,
+                balanceCurrencyCode: viewModel.balanceCurrencyCode,
+                usageCurrencyCode: viewModel.usageCurrencyCode
             )
 
             UsageCardsView(

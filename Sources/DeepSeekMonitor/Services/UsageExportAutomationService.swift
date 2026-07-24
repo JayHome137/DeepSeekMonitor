@@ -49,7 +49,7 @@ final class UsageExportAutomationService: NSObject, ObservableObject {
     private static let intervalKey = "usage_export_automation_interval_seconds"
     private static let usageURL = URL(string: "https://platform.deepseek.com/usage")!
     private static let loginURL = URL(string: "https://platform.deepseek.com/sign_in")!
-    private static let defaultAutoExportInterval: TimeInterval = 60
+    private static let defaultAutoExportInterval: TimeInterval = 300
 
     private var timer: Timer?
     private var window: NSWindow?
@@ -70,6 +70,9 @@ final class UsageExportAutomationService: NSObject, ObservableObject {
         autoExportIntervalSeconds = Self.normalizedInterval(interval)
         statusMessage = enabled ? "自动导出待命中" : "自动导出未开启"
         super.init()
+        if interval != autoExportIntervalSeconds {
+            UserDefaults.standard.set(autoExportIntervalSeconds, forKey: Self.intervalKey)
+        }
     }
 
     func start() {
@@ -129,7 +132,7 @@ final class UsageExportAutomationService: NSObject, ObservableObject {
     }
 
     private static func normalizedInterval(_ value: TimeInterval) -> TimeInterval {
-        let allowed: [TimeInterval] = [60, 300, 600, 1800]
+        let allowed: [TimeInterval] = [300, 600, 1800]
         return allowed.contains(value) ? value : defaultAutoExportInterval
     }
 

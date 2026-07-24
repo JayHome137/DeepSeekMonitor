@@ -25,6 +25,10 @@ final class DashboardViewModel: ObservableObject {
     @Published private(set) var grantedBalance: Double = 0
     /// 充值余额（元）
     @Published private(set) var toppedUpBalance: Double = 0
+    /// 余额币种
+    @Published private(set) var balanceCurrencyCode: String = "CNY"
+    /// 用量费用币种
+    @Published private(set) var usageCurrencyCode: String = "CNY"
     /// 当日消耗（元）
     @Published private(set) var currentDayCost: Double = 0
     /// 本月消费（元）
@@ -51,8 +55,10 @@ final class DashboardViewModel: ObservableObject {
     @Published private(set) var errorMessage: String?
     /// 非阻断性提示（例如部分数据接口不可用）
     @Published private(set) var warningMessage: String?
-    /// 上次成功刷新时间
-    @Published private(set) var lastUpdated: Date?
+    /// 余额 API 上次成功刷新时间
+    @Published private(set) var balanceLastUpdated: Date?
+    /// 用量文件上次成功导入时间
+    @Published private(set) var usageLastUpdated: Date?
     /// 是否已配置 API Key
     @Published private(set) var hasAPIKey: Bool = false
     /// 面板驻留时间（秒）
@@ -222,23 +228,22 @@ final class DashboardViewModel: ObservableObject {
                 totalBalance = Double(info.totalBalance) ?? 0
                 grantedBalance = Double(info.grantedBalance) ?? 0
                 toppedUpBalance = Double(info.toppedUpBalance) ?? 0
+                balanceCurrencyCode = normalizedCurrencyCode(info.currency)
             }
+            balanceLastUpdated = Date()
 
             do {
                 let usageResp = try await usageTask
 
-                // ── 更新用量（按模型聚合） ──
-                aggregateUsage(usageResp.data)
+                // ── 更新用量、费用和趋势 ──
+                applyUsageRecords(usageResp.data)
                 LocalCache.shared.saveUsageRecords(usageResp.data)
-
-                // ── 构建每日用量字典（用于趋势图） ──
-                buildDailyUsage(from: usageResp.data)
+                usageLastUpdated = Date()
             } catch {
                 handleUsageFailure(error)
             }
 
             // ── 持久化到本地缓存 ──
-            lastUpdated = Date()
             saveCache()
 
         } catch let error as APIError {
@@ -274,6 +279,8 @@ final class DashboardViewModel: ObservableObject {
         totalBalance = 0
         grantedBalance = 0
         toppedUpBalance = 0
+        balanceCurrencyCode = "CNY"
+        usageCurrencyCode = "CNY"
         currentDayCost = 0
         currentMonthCost = 0
         flashUsage = nil
@@ -281,29 +288,49 @@ final class DashboardViewModel: ObservableObject {
         dailyUsage = [:]
         flashDailyUsage = []
         proDailyUsage = []
-        lastUpdated = nil
+        balanceLastUpdated = nil
+        usageLastUpdated = nil
         errorMessage = nil
         warningMessage = nil
     }
 
-    func importUsageCSV(from url: URL) throws {
-        let records = try UsageCSVImporter.importRecords(from: url)
+    func importUsageCSV(from url: URL, costURL: URL? = nil) throws {
+        let records = try UsageCSVImporter.importRecords(
+            from: url,
+            costURL: costURL,
+            defaultCurrencyCode: balanceCurrencyCode
+        )
         LocalCache.shared.saveUsageRecords(records)
         applyUsageRecords(records)
-        warningMessage = "已显示从 CSV 导入的用量记录"
-        lastUpdated = Date()
+        warningMessage = "已显示导入的用量记录"
+        usageLastUpdated = Date()
         saveCache()
+    }
+
+    @discardableResult
+    func importUsageExport(from url: URL) throws -> [String] {
+        let candidate = try UsageAutoImportService.prepareImportCandidate(from: url)
+        try importUsageCSV(
+            from: candidate.preparedAmountCSVURL,
+            costURL: candidate.preparedCostCSVURL
+        )
+        UsageAutoImportService.markImported(candidate.fingerprint)
+        return candidate.selectedCSVNames
     }
 
     func autoImportUsageIfNeeded() {
         do {
             guard let candidate = try UsageAutoImportService.nextImportCandidate() else { return }
-            try importUsageCSV(from: candidate.preparedCSVURL)
+            try importUsageCSV(
+                from: candidate.preparedAmountCSVURL,
+                costURL: candidate.preparedCostCSVURL
+            )
             UsageAutoImportService.markImported(candidate.fingerprint)
             try? UsageAutoImportService.cleanupImportedSources(keeping: candidate.sourceURL)
         } catch {
             if let candidate = try? UsageAutoImportService.nextImportCandidate() {
-                warningMessage = "自动导入 \(candidate.sourceName) -> \(candidate.selectedCSVName) 失败：\(error.localizedDescription)"
+                let selectedNames = candidate.selectedCSVNames.joined(separator: " + ")
+                warningMessage = "自动导入 \(candidate.sourceName) -> \(selectedNames) 失败：\(error.localizedDescription)"
             } else {
                 warningMessage = "自动导入用量失败：\(error.localizedDescription)"
             }
@@ -319,18 +346,21 @@ final class DashboardViewModel: ObservableObject {
 
     /// 总费用（所有模型合计，单位：元）
     var totalCost: Double {
-        let flash = Double(flashUsage?.costInCents ?? 0) / 100.0
-        let pro   = Double(proUsage?.costInCents ?? 0) / 100.0
-        return flash + pro
+        let amount = (flashUsage?.costAmount ?? .zero) + (proUsage?.costAmount ?? .zero)
+        return NSDecimalNumber(decimal: amount).doubleValue
     }
 
     var currentMonthCostFormatted: String {
-        String(format: "¥%.2f", currentMonthCost)
+        formattedCurrency(currentMonthCost, currencyCode: usageCurrencyCode)
     }
 
-    /// 上次刷新时间的格式化文本
+    var lastUpdated: Date? {
+        [balanceLastUpdated, usageLastUpdated].compactMap { $0 }.max()
+    }
+
+    /// 用量上次更新时间的格式化文本
     var lastUpdatedFormatted: String {
-        guard let date = lastUpdated else { return "尚未刷新" }
+        guard let date = usageLastUpdated else { return "尚未导入用量" }
         let fmt = DateFormatter()
         fmt.dateFormat = "HH:mm:ss"
         return fmt.string(from: date)
@@ -368,11 +398,12 @@ final class DashboardViewModel: ObservableObject {
 
     /// 最近 N 天的趋势数据（按日期排序）
     var chartData: [ChartDataPoint] {
-        let calendar = Calendar.current
+        let calendar = UsageTime.calendar
         let today = calendar.startOfDay(for: Date())
         let dayFormatter: DateFormatter = {
             let f = DateFormatter()
             f.locale = Locale(identifier: "zh_CN")
+            f.timeZone = UsageTime.timeZone
             f.dateFormat = "M/d"
             return f
         }()
@@ -412,8 +443,8 @@ final class DashboardViewModel: ObservableObject {
 
     /// 按模型聚合用量
     private func aggregateUsage(_ records: [UsageRecord]) {
-        let flashRecords = records.filter { $0.modelName == DeepSeekModel.flash.rawValue }
-        let proRecords   = records.filter { $0.modelName == DeepSeekModel.pro.rawValue }
+        let flashRecords = records.filter { normalizedModelName($0.modelName) == .flash }
+        let proRecords   = records.filter { normalizedModelName($0.modelName) == .pro }
 
         flashUsage = summary(for: flashRecords, model: .flash)
         proUsage = summary(for: proRecords, model: .pro)
@@ -467,6 +498,7 @@ final class DashboardViewModel: ObservableObject {
     }
 
     private func applyUsageRecords(_ records: [UsageRecord]) {
+        usageCurrencyCode = preferredUsageCurrency(from: records)
         aggregateUsage(records)
         buildDailyUsage(from: records)
         currentDayCost = computeCurrentDayCost(from: records)
@@ -523,6 +555,8 @@ final class DashboardViewModel: ObservableObject {
         totalBalance = cached.totalBalance
         grantedBalance = cached.grantedBalance
         toppedUpBalance = cached.toppedUpBalance
+        balanceCurrencyCode = cached.balanceCurrencyCode
+        usageCurrencyCode = cached.usageCurrencyCode
         currentDayCost = cached.currentDayCost
         currentMonthCost = cached.currentMonthCost
 
@@ -547,7 +581,8 @@ final class DashboardViewModel: ObservableObject {
         }
         dailyUsage = restored
 
-        lastUpdated = cached.lastUpdated
+        balanceLastUpdated = cached.balanceLastUpdated
+        usageLastUpdated = cached.usageLastUpdated
         loadImportedUsageIfAvailable()
     }
 
@@ -563,6 +598,8 @@ final class DashboardViewModel: ObservableObject {
             totalBalance: totalBalance,
             grantedBalance: grantedBalance,
             toppedUpBalance: toppedUpBalance,
+            balanceCurrencyCode: balanceCurrencyCode,
+            usageCurrencyCode: usageCurrencyCode,
             currentDayCost: currentDayCost,
             currentMonthCost: currentMonthCost,
             flashTotalTokens: flashUsage?.totalTokens ?? 0,
@@ -570,6 +607,8 @@ final class DashboardViewModel: ObservableObject {
             proTotalTokens: proUsage?.totalTokens ?? 0,
             proCostInCents: proUsage?.costInCents ?? 0,
             dailyUsage: dailyUsageStrings,
+            balanceLastUpdated: balanceLastUpdated,
+            usageLastUpdated: usageLastUpdated,
             lastUpdated: lastUpdated ?? Date()
         )
 
@@ -581,7 +620,10 @@ final class DashboardViewModel: ObservableObject {
         return ModelUsageSummary(
             model: model,
             totalTokens: records.reduce(0) { $0 + $1.totalTokens },
-            costInCents: records.reduce(0) { $0 + $1.costInCents }
+            costAmount: records.reduce(Decimal.zero) {
+                $0 + $1.costAmount(for: usageCurrencyCode)
+            },
+            currencyCode: usageCurrencyCode
         )
     }
 
@@ -590,40 +632,47 @@ final class DashboardViewModel: ObservableObject {
         return ModelUsageSummary(
             model: model,
             totalTokens: totalTokens,
-            costInCents: costInCents
+            costAmount: decimalAmount(fromCents: costInCents),
+            currencyCode: usageCurrencyCode
         )
     }
 
     private func computeCurrentMonthCost(from records: [UsageRecord]) -> Double {
-        let calendar = Calendar.current
         let now = Date()
-        let totalCents = records.reduce(0) { partial, record in
-            guard let day = recordDay(from: record.date),
-                  calendar.isDate(day, equalTo: now, toGranularity: .month),
-                  calendar.isDate(day, equalTo: now, toGranularity: .year) else {
+        let totalAmount = records.reduce(Decimal.zero) { partial, record in
+            guard UsageTime.isSameMonth(record.date, as: now) else {
                 return partial
             }
-            return partial + record.costInCents
+            return partial + record.costAmount(for: usageCurrencyCode)
         }
-        return Double(totalCents) / 100.0
+        return NSDecimalNumber(decimal: totalAmount).doubleValue
     }
 
     private func computeCurrentDayCost(from records: [UsageRecord]) -> Double {
-        let calendar = Calendar.current
         let now = Date()
-        let totalCents = records.reduce(0) { partial, record in
-            guard let day = recordDay(from: record.date),
-                  calendar.isDate(day, inSameDayAs: now) else {
+        let totalAmount = records.reduce(Decimal.zero) { partial, record in
+            guard UsageTime.isSameDay(record.date, as: now) else {
                 return partial
             }
-            return partial + record.costInCents
+            return partial + record.costAmount(for: usageCurrencyCode)
         }
-        return Double(totalCents) / 100.0
+        return NSDecimalNumber(decimal: totalAmount).doubleValue
+    }
+
+    private func preferredUsageCurrency(from records: [UsageRecord]) -> String {
+        let currencies = Set(records.flatMap { $0.costByCurrency.keys }.map(normalizedCurrencyCode))
+        if currencies.contains(balanceCurrencyCode) {
+            return balanceCurrencyCode
+        }
+        if currencies.contains("CNY") {
+            return "CNY"
+        }
+        return currencies.sorted().first ?? balanceCurrencyCode
     }
 
     private func buildModelDailyPoints(from values: [Date: (tokens: Int, hit: Int, miss: Int, output: Int, requests: Int)]) -> [ModelDailyUsagePoint] {
         values.keys.sorted().map { date in
-            let normalizedDate = Calendar.current.startOfDay(for: date)
+            let normalizedDate = UsageTime.calendar.startOfDay(for: date)
             let metrics = values[date] ?? (0, 0, 0, 0, 0)
             return ModelDailyUsagePoint(
                 date: normalizedDate,
@@ -649,14 +698,13 @@ final class DashboardViewModel: ObservableObject {
     }
 
     private func recordDay(from raw: String) -> Date? {
-        guard let parsed = cacheDateFormatter.date(from: raw) else { return nil }
-        return Calendar.current.startOfDay(for: parsed)
+        UsageTime.day(from: raw)
     }
 
     private var chartDateFormatter: DateFormatter {
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "zh_CN")
-        formatter.timeZone = .current
+        formatter.timeZone = UsageTime.timeZone
         formatter.dateFormat = "M/d"
         return formatter
     }
@@ -664,7 +712,7 @@ final class DashboardViewModel: ObservableObject {
     private var cacheDateFormatter: DateFormatter {
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.timeZone = .current
+        formatter.timeZone = UsageTime.timeZone
         formatter.dateFormat = "yyyy-MM-dd"
         return formatter
     }

@@ -8,10 +8,11 @@ enum UsageAutoImportService {
 
     struct ImportCandidate {
         let sourceURL: URL
-        let preparedCSVURL: URL
+        let preparedAmountCSVURL: URL
+        let preparedCostCSVURL: URL?
         let fingerprint: String
         let sourceName: String
-        let selectedCSVName: String
+        let selectedCSVNames: [String]
     }
 
     static func autoImportRootFolderURL() throws -> URL {
@@ -50,7 +51,6 @@ enum UsageAutoImportService {
 
     static func nextImportCandidate() throws -> ImportCandidate? {
         let incomingFolder = try incomingFolderURL()
-        let workspaceFolder = try autoImportFolderURL()
         let candidates = try sourceCandidates(incomingFolder: incomingFolder)
         guard let latest = candidates.first else { return nil }
 
@@ -60,13 +60,24 @@ enum UsageAutoImportService {
             return nil
         }
 
-        let prepared = try prepareManagedCSV(from: latest, workspaceFolder: workspaceFolder)
+        return try makeImportCandidate(from: latest, fingerprint: fingerprint)
+    }
+
+    static func prepareImportCandidate(from sourceURL: URL) throws -> ImportCandidate {
+        let fingerprint = try fileFingerprint(for: sourceURL)
+        return try makeImportCandidate(from: sourceURL, fingerprint: fingerprint)
+    }
+
+    private static func makeImportCandidate(from sourceURL: URL, fingerprint: String) throws -> ImportCandidate {
+        let workspaceFolder = try autoImportFolderURL()
+        let prepared = try prepareManagedCSV(from: sourceURL, workspaceFolder: workspaceFolder)
         return ImportCandidate(
-            sourceURL: latest,
-            preparedCSVURL: prepared.url,
+            sourceURL: sourceURL,
+            preparedAmountCSVURL: prepared.amountURL,
+            preparedCostCSVURL: prepared.costURL,
             fingerprint: fingerprint,
-            sourceName: latest.lastPathComponent,
-            selectedCSVName: prepared.selectedName
+            sourceName: sourceURL.lastPathComponent,
+            selectedCSVNames: prepared.selectedNames
         )
     }
 
@@ -99,7 +110,7 @@ enum UsageAutoImportService {
         var results: [URL] = []
         for case let fileURL as URL in enumerator {
             let name = fileURL.lastPathComponent.lowercased()
-            guard name.contains("deepseek") || name.contains("amount") || name.contains("usage") || name.contains("export") else {
+            guard name.contains("deepseek") || name.contains("amount") || name.contains("cost") || name.contains("usage") || name.contains("export") else {
                 continue
             }
 
@@ -114,7 +125,10 @@ enum UsageAutoImportService {
         return results
     }
 
-    private static func prepareManagedCSV(from source: URL, workspaceFolder: URL) throws -> (url: URL, selectedName: String) {
+    static func prepareManagedCSV(
+        from source: URL,
+        workspaceFolder: URL
+    ) throws -> (amountURL: URL, costURL: URL?, selectedNames: [String]) {
         try clearManagedFolder(at: workspaceFolder)
 
         let kind = detectFileKind(at: source)
@@ -133,17 +147,33 @@ enum UsageAutoImportService {
             guard let amountCSV = preferredCSV(from: csvFiles) else {
                 throw UsageCSVImportError.noValidRows
             }
+            let costCSV = csvFiles.first { $0.lastPathComponent.lowercased().contains("cost") }
 
-            let destination = workspaceFolder.appendingPathComponent("amount.csv")
-            try FileManager.default.copyItem(at: amountCSV, to: destination)
-            try clearManagedFolderKeeping(destination, in: workspaceFolder)
-            return (destination, amountCSV.lastPathComponent)
+            let amountDestination = workspaceFolder.appendingPathComponent("amount.csv")
+            try FileManager.default.copyItem(at: amountCSV, to: amountDestination)
+
+            let costDestination: URL?
+            if let costCSV {
+                let destination = workspaceFolder.appendingPathComponent("cost.csv")
+                try FileManager.default.copyItem(at: costCSV, to: destination)
+                costDestination = destination
+            } else {
+                costDestination = nil
+            }
+
+            let keptFiles = [amountDestination, costDestination].compactMap { $0 }
+            try clearManagedFolderKeeping(keptFiles, in: workspaceFolder)
+            return (
+                amountDestination,
+                costDestination,
+                [amountCSV.lastPathComponent, costCSV?.lastPathComponent].compactMap { $0 }
+            )
         }
 
         let destination = workspaceFolder.appendingPathComponent("amount.csv")
         try FileManager.default.copyItem(at: source, to: destination)
-        try clearManagedFolderKeeping(destination, in: workspaceFolder)
-        return (destination, source.lastPathComponent)
+        try clearManagedFolderKeeping([destination], in: workspaceFolder)
+        return (destination, nil, [source.lastPathComponent])
     }
 
     private static func cleanupCandidateFiles(in directory: URL, keeping keepURL: URL?) throws {
@@ -182,9 +212,10 @@ enum UsageAutoImportService {
         }
     }
 
-    private static func clearManagedFolderKeeping(_ keepURL: URL, in directory: URL) throws {
+    private static func clearManagedFolderKeeping(_ keepURLs: [URL], in directory: URL) throws {
+        let standardizedKeepURLs = Set(keepURLs.map(\.standardizedFileURL))
         let contents = try FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil)
-        for item in contents where item != keepURL {
+        for item in contents where standardizedKeepURLs.contains(item.standardizedFileURL) == false {
             try? FileManager.default.removeItem(at: item)
         }
     }

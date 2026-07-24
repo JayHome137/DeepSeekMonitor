@@ -7,6 +7,8 @@ struct BalanceCardView: View {
     let currentDayCost: Double
     let currentMonthCost: Double
     let isAvailable: Bool
+    let balanceCurrencyCode: String
+    let usageCurrencyCode: String
 
     @Environment(\.colorScheme) var colorScheme
 
@@ -23,7 +25,7 @@ struct BalanceCardView: View {
                 availabilityBadge
             }
 
-            Text(String(format: "¥%.2f", totalBalance))
+            Text(formattedCurrency(totalBalance, currencyCode: balanceCurrencyCode))
                 .font(.system(size: 28, weight: .bold, design: .rounded))
                 .monospacedDigit()
                 .foregroundStyle(isAvailable ? Theme.brand : .red)
@@ -34,15 +36,15 @@ struct BalanceCardView: View {
 
             HStack(spacing: 8) {
                 compactMetric(
-                    title: "当日消耗",
+                    title: "今日消费 · UTC+0",
                     systemImage: "sun.max",
-                    value: String(format: "¥%.2f", currentDayCost)
+                    value: formattedCurrency(currentDayCost, currencyCode: usageCurrencyCode)
                 )
 
                 compactMetric(
-                    title: "本月消费",
+                    title: "本月消费 · UTC+0",
                     systemImage: "calendar",
-                    value: String(format: "¥%.2f", currentMonthCost)
+                    value: formattedCurrency(currentMonthCost, currencyCode: usageCurrencyCode)
                 )
             }
         }

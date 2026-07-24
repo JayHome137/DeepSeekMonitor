@@ -38,7 +38,6 @@ struct SettingsView: View {
     ]
 
     private let exportIntervalOptions: [(label: String, value: TimeInterval)] = [
-        ("1 分钟", 60),
         ("5 分钟", 300),
         ("10 分钟", 600),
         ("半小时", 1800),
@@ -316,11 +315,11 @@ struct SettingsView: View {
 
     private var refreshIntervalSection: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Label("自动刷新", systemImage: "timer")
+            Label("余额自动刷新", systemImage: "timer")
                 .font(.subheadline)
                 .fontWeight(.medium)
 
-            Text("每隔多久自动从 DeepSeek API 拉取最新数据")
+            Text("每隔多久从 DeepSeek API 刷新余额；用量由下方网页导出单独同步。")
                 .font(.caption)
                 .foregroundStyle(.secondary)
 
@@ -404,10 +403,10 @@ struct SettingsView: View {
                 }
                 .buttonStyle(.bordered)
 
-                Button(action: importUsageCSV) {
+                Button(action: importUsageExport) {
                     HStack(spacing: 4) {
                         Image(systemName: "square.and.arrow.down")
-                        Text("导入 amount CSV")
+                        Text("导入 Usage ZIP/CSV")
                     }
                     .font(.caption)
                 }
@@ -467,7 +466,7 @@ struct SettingsView: View {
                 .font(.subheadline)
                 .fontWeight(.medium)
 
-            Text("首次需要你手动登录一次 DeepSeek 平台。登录后，App 会按你设定的频率在后台静默刷新 usage 页面并尝试导出，正常情况下不会主动弹出网页窗口，下载后的 ZIP 会继续自动导入。")
+            Text("首次需要你手动登录一次 DeepSeek 平台。登录后，App 会按设定频率在后台导出并导入用量 ZIP。官方数据采用 UTC+0，且可能延迟约 5 分钟。")
                 .font(.caption)
                 .foregroundStyle(.secondary)
 
@@ -585,11 +584,16 @@ struct SettingsView: View {
                 .buttonStyle(.bordered)
                 .tint(.red)
 
-                if let lastUpdated = viewModel.lastUpdated {
-                    Text("上次缓存: \(lastUpdated.formatted(date: .abbreviated, time: .standard))")
-                        .font(.caption2)
-                        .foregroundStyle(.tertiary)
+                VStack(alignment: .leading, spacing: 2) {
+                    if let balanceUpdatedAt = viewModel.balanceLastUpdated {
+                        Text("余额更新: \(balanceUpdatedAt.formatted(date: .abbreviated, time: .standard))")
+                    }
+                    if let usageUpdatedAt = viewModel.usageLastUpdated {
+                        Text("用量导入: \(usageUpdatedAt.formatted(date: .abbreviated, time: .standard))")
+                    }
                 }
+                .font(.caption2)
+                .foregroundStyle(.tertiary)
             }
         }
     }
@@ -631,8 +635,10 @@ struct SettingsView: View {
             do {
                 let service = DeepSeekService.shared
                 let balance = try await service.fetchBalance()
-                let balanceText = balance.preferredBalanceInfo?.totalBalance ?? "?"
-                verifyStatus = .success("验证成功，当前余额: ¥\(balanceText)")
+                let info = balance.preferredBalanceInfo
+                let balanceValue = Double(info?.totalBalance ?? "") ?? 0
+                let currencyCode = normalizedCurrencyCode(info?.currency ?? "CNY")
+                verifyStatus = .success("验证成功，当前余额: \(formattedCurrency(balanceValue, currencyCode: currencyCode))")
                 isVerifying = false
             } catch let error as APIError {
                 verifyStatus = .failure(error.errorDescription ?? "未知错误")
@@ -644,19 +650,20 @@ struct SettingsView: View {
         }
     }
 
-    private func importUsageCSV() {
+    private func importUsageExport() {
         let panel = NSOpenPanel()
-        panel.title = "选择 DeepSeek amount CSV"
-        panel.message = "请选择从 DeepSeek Usage 导出并解压后的 amount CSV 文件"
+        panel.title = "选择 DeepSeek Usage ZIP/CSV"
+        panel.message = "优先选择官方导出的 ZIP，以同时读取用量和精确费用"
         panel.allowsMultipleSelection = false
         panel.canChooseDirectories = false
-        panel.allowedContentTypes = [.commaSeparatedText, .plainText]
+        panel.allowedContentTypes = [.zip, .commaSeparatedText, .plainText]
 
         guard panel.runModal() == .OK, let url = panel.url else { return }
 
         do {
-            try viewModel.importUsageCSV(from: url)
-            usageImportStatus = .success("导入成功，已更新用量和趋势")
+            let importedFiles = try viewModel.importUsageExport(from: url)
+            let details = importedFiles.joined(separator: " + ")
+            usageImportStatus = .success("导入成功：\(details)")
         } catch let error as UsageCSVImportError {
             usageImportStatus = .failure(error.errorDescription ?? "导入失败")
         } catch {
