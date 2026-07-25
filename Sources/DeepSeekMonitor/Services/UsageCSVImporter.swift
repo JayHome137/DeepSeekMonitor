@@ -5,7 +5,6 @@ enum UsageCSVImportError: LocalizedError {
     case emptyFile
     case unsupportedColumns
     case noValidRows
-    case staleExportRange(startDate: String, endDateExclusive: String, expectedDate: String)
     case detailed(String)
 
     var errorDescription: String? {
@@ -18,8 +17,6 @@ enum UsageCSVImportError: LocalizedError {
             return "CSV 列名无法识别，请选择 DeepSeek Usage 导出的 amount CSV"
         case .noValidRows:
             return "CSV 中没有可导入的有效用量记录"
-        case .staleExportRange(let startDate, let endDateExclusive, let expectedDate):
-            return "导出范围 \(startDate) 至 \(endDateExclusive) 不包含 \(expectedDate)，已保留现有用量数据"
         case .detailed(let message):
             return message
         }
@@ -30,24 +27,21 @@ enum UsageCSVImporter {
     static func importRecords(
         from url: URL,
         costURL: URL? = nil,
-        defaultCurrencyCode: String = "CNY",
-        dataTimeZone: TimeZone = UsageTime.timeZone
+        defaultCurrencyCode: String = "CNY"
     ) throws -> [UsageRecord] {
         let amountRecords = try importBaseRecords(
             from: url,
-            defaultCurrencyCode: defaultCurrencyCode,
-            dataTimeZone: dataTimeZone
+            defaultCurrencyCode: defaultCurrencyCode
         )
         guard let costURL else { return amountRecords }
 
-        let exactCosts = try importCostExport(from: costURL, dataTimeZone: dataTimeZone)
+        let exactCosts = try importCostExport(from: costURL)
         return merge(amountRecords: amountRecords, exactCosts: exactCosts)
     }
 
     private static func importBaseRecords(
         from url: URL,
-        defaultCurrencyCode: String,
-        dataTimeZone: TimeZone
+        defaultCurrencyCode: String
     ) throws -> [UsageRecord] {
         let raw: String
         if let utf8 = try? String(contentsOf: url, encoding: .utf8) {
@@ -75,8 +69,7 @@ enum UsageCSVImporter {
             return try importAmountExport(
                 rows: rows,
                 headers: headers,
-                defaultCurrencyCode: defaultCurrencyCode,
-                dataTimeZone: dataTimeZone
+                defaultCurrencyCode: defaultCurrencyCode
             )
         }
 
@@ -96,10 +89,7 @@ enum UsageCSVImporter {
         var records: [UsageRecord] = []
         for (offset, row) in rows.dropFirst().enumerated() {
             guard row.isEmpty == false else { continue }
-            guard let date = normalizedDate(
-                    from: value(at: resolvedDateIndex, in: row),
-                    timeZone: dataTimeZone
-                  ),
+            guard let date = normalizedDate(from: value(at: resolvedDateIndex, in: row)),
                   let model = normalizedModel(from: value(at: resolvedModelIndex, in: row)) else {
                 continue
             }
@@ -150,8 +140,7 @@ enum UsageCSVImporter {
     private static func importAmountExport(
         rows: [[String]],
         headers: [String],
-        defaultCurrencyCode: String,
-        dataTimeZone: TimeZone
+        defaultCurrencyCode: String
     ) throws -> [UsageRecord] {
         guard let dateIndex = firstIndex(in: headers, matching: ["utcdate", "date", "day", "日期", "时间"]),
               let modelIndex = firstIndex(in: headers, matching: ["model", "模型"]),
@@ -178,7 +167,7 @@ enum UsageCSVImporter {
 
         for row in rows.dropFirst() {
             let rawDate = value(at: dateIndex, in: row)
-            guard let date = normalizedDate(from: rawDate, timeZone: dataTimeZone) else { continue }
+            guard let date = normalizedDate(from: rawDate) else { continue }
             validDateCount += 1
 
             let rawModel = value(at: modelIndex, in: row)
@@ -255,10 +244,7 @@ enum UsageCSVImporter {
         return records
     }
 
-    private static func importCostExport(
-        from url: URL,
-        dataTimeZone: TimeZone
-    ) throws -> [String: [String: Decimal]] {
+    private static func importCostExport(from url: URL) throws -> [String: [String: Decimal]] {
         let raw: String
         if let utf8 = try? String(contentsOf: url, encoding: .utf8) {
             raw = utf8
@@ -283,10 +269,7 @@ enum UsageCSVImporter {
 
         var costs: [String: [String: Decimal]] = [:]
         for row in rows.dropFirst() {
-            guard let date = normalizedDate(
-                    from: value(at: dateIndex, in: row),
-                    timeZone: dataTimeZone
-                  ),
+            guard let date = normalizedDate(from: value(at: dateIndex, in: row)),
                   let model = normalizedModel(from: value(at: modelIndex, in: row)) else {
                 continue
             }
@@ -391,7 +374,7 @@ enum UsageCSVImporter {
             .replacingOccurrences(of: ")", with: "")
     }
 
-    private static func normalizedDate(from raw: String, timeZone: TimeZone) -> String? {
+    private static func normalizedDate(from raw: String) -> String? {
         let text = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         guard text.isEmpty == false else { return nil }
 
@@ -414,13 +397,13 @@ enum UsageCSVImporter {
 
         let output = DateFormatter()
         output.locale = Locale(identifier: "en_US_POSIX")
-        output.timeZone = timeZone
+        output.timeZone = UsageTime.timeZone
         output.dateFormat = "yyyy-MM-dd"
 
         for pattern in fmts {
             let formatter = DateFormatter()
             formatter.locale = Locale(identifier: "en_US_POSIX")
-            formatter.timeZone = timeZone
+            formatter.timeZone = UsageTime.timeZone
             formatter.dateFormat = pattern
             if let date = formatter.date(from: text) {
                 return output.string(from: date)
@@ -502,12 +485,7 @@ enum UsageCSVImporter {
         var field = ""
         var inQuotes = false
 
-        // Swift treats CRLF as one grapheme cluster, so a Character-by-Character
-        // parser cannot match it against either "\r" or "\n" without normalizing.
-        let normalizedText = text
-            .replacingOccurrences(of: "\r\n", with: "\n")
-            .replacingOccurrences(of: "\r", with: "\n")
-        let characters = Array(normalizedText)
+        let characters = Array(text)
         var index = 0
         while index < characters.count {
             let char = characters[index]

@@ -66,7 +66,6 @@ final class LocalCache {
     func clearAll() {
         defaults.removeObject(forKey: Keys.dashboard)
         defaults.removeObject(forKey: Keys.usageHistory)
-        UsageTime.clearImportedTimeZone()
     }
 
     // MARK: - Native Widget
@@ -105,9 +104,6 @@ final class LocalCache {
             proCostInCents: dashboard.proCostInCents,
             balanceUpdatedAt: dashboard.balanceLastUpdated ?? dashboard.lastUpdated,
             usageUpdatedAt: dashboard.usageLastUpdated ?? dashboard.lastUpdated,
-            usageTimeZoneOffsetSeconds: UsageTime.timeZone.secondsFromGMT(
-                for: dashboard.usageLastUpdated ?? dashboard.lastUpdated
-            ),
             lastUpdated: dashboard.lastUpdated
         )
 

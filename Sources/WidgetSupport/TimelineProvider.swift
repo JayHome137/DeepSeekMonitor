@@ -16,7 +16,6 @@ struct WidgetSnapshot: Decodable {
     let proCostInCents: Int
     let balanceUpdatedAt: Date
     let usageUpdatedAt: Date
-    let usageTimeZoneOffsetSeconds: Int
     let lastUpdated: Date
 
     private enum CodingKeys: String, CodingKey {
@@ -33,7 +32,6 @@ struct WidgetSnapshot: Decodable {
         case proCostInCents
         case balanceUpdatedAt
         case usageUpdatedAt
-        case usageTimeZoneOffsetSeconds
         case lastUpdated
     }
 
@@ -53,10 +51,6 @@ struct WidgetSnapshot: Decodable {
         lastUpdated = try container.decode(Date.self, forKey: .lastUpdated)
         balanceUpdatedAt = try container.decodeIfPresent(Date.self, forKey: .balanceUpdatedAt) ?? lastUpdated
         usageUpdatedAt = try container.decodeIfPresent(Date.self, forKey: .usageUpdatedAt) ?? lastUpdated
-        usageTimeZoneOffsetSeconds = try container.decodeIfPresent(
-            Int.self,
-            forKey: .usageTimeZoneOffsetSeconds
-        ) ?? 0
     }
 }
 
@@ -76,7 +70,6 @@ struct WidgetEntry: TimelineEntry {
     let proTokens: Int
     let proCostCents: Int
     let usageUpdatedAt: Date
-    let usageTimeZoneOffsetSeconds: Int
     let hasData: Bool
 
     static let placeholder = WidgetEntry(
@@ -93,7 +86,6 @@ struct WidgetEntry: TimelineEntry {
         proTokens: 0,
         proCostCents: 0,
         usageUpdatedAt: Date(),
-        usageTimeZoneOffsetSeconds: 0,
         hasData: false
     )
 }
@@ -154,7 +146,6 @@ struct Provider: TimelineProvider {
                 proTokens: 0,
                 proCostCents: 0,
                 usageUpdatedAt: Date(),
-                usageTimeZoneOffsetSeconds: 0,
                 hasData: false
             )
         }
@@ -176,7 +167,6 @@ struct Provider: TimelineProvider {
             proTokens: s.proTotalTokens,
             proCostCents: s.proCostInCents,
             usageUpdatedAt: s.usageUpdatedAt,
-            usageTimeZoneOffsetSeconds: s.usageTimeZoneOffsetSeconds,
             hasData: true
         )
     }

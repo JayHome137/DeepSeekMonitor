@@ -118,7 +118,7 @@ struct ModelDetailView: View {
         guard let first = points.first?.label, let last = points.last?.label else {
             return "暂无日期范围"
         }
-        return "\(first) - \(last) · \(viewModel.usageTimeZoneLabel)"
+        return "\(first) - \(last) · UTC+0"
     }
 
     private var tint: Color {
