@@ -40,6 +40,41 @@ final class UsageImportTests: XCTestCase {
         XCTAssertEqual(record.costAmount(for: "CNY"), .zero)
     }
 
+    func testOfficialCRLFExportsWithBOMAndCompactDatesImportSuccessfully() throws {
+        let directory = try makeTemporaryDirectory()
+        let amountLines = [
+            "user_id,utc_date,model,api_key_name,api_key,type,price,amount",
+            "account,20260725,deepseek-v4-pro,\"Team, Primary\",sk-masked,input_cache_hit_tokens,0.000000025,1000",
+            "account,20260725,deepseek-v4-pro,\"Team, Primary\",sk-masked,input_cache_miss_tokens,0.000003,500",
+            "account,20260725,deepseek-v4-pro,\"Team, Primary\",sk-masked,output_tokens,0.000006,200",
+            "account,20260725,deepseek-v4-pro,\"Team, Primary\",sk-masked,request_count,,3",
+        ]
+        let costLines = [
+            "user_id,utc_date,model,wallet_type,cost,currency",
+            "account,20260725,deepseek-v4-pro,paid,1.2345,CNY",
+        ]
+
+        var amountData = Data([0xEF, 0xBB, 0xBF])
+        amountData.append(Data((amountLines.joined(separator: "\r\n") + "\r\n").utf8))
+        var costData = Data([0xEF, 0xBB, 0xBF])
+        costData.append(Data((costLines.joined(separator: "\r\n") + "\r\n").utf8))
+
+        let amountURL = try write(amountData, named: "amount-2026-07-25_2026-07-26.csv", in: directory)
+        let costURL = try write(costData, named: "cost-2026-07-25_2026-07-26.csv", in: directory)
+        let record = try XCTUnwrap(
+            UsageCSVImporter.importRecords(from: amountURL, costURL: costURL).first
+        )
+
+        XCTAssertEqual(record.date, "2026-07-25")
+        XCTAssertEqual(record.modelName, DeepSeekModel.pro.rawValue)
+        XCTAssertEqual(record.totalTokens, 1_700)
+        XCTAssertEqual(record.inputCacheHitTokens, 1_000)
+        XCTAssertEqual(record.inputCacheMissTokens, 500)
+        XCTAssertEqual(record.completionTokens, 200)
+        XCTAssertEqual(record.requestCount, 3)
+        XCTAssertEqual(record.costAmount(for: "CNY"), decimal("1.2345"))
+    }
+
     func testAmountRowsKeepSubCentPrecisionUntilAfterAggregation() throws {
         let directory = try makeTemporaryDirectory()
         let amountURL = try write(
@@ -94,11 +129,63 @@ final class UsageImportTests: XCTestCase {
     func testUsageDateComparisonAlwaysUsesUTC() throws {
         let formatter = ISO8601DateFormatter()
         let reference = try XCTUnwrap(formatter.date(from: "2026-06-30T16:30:00Z"))
+        let utc = try XCTUnwrap(TimeZone(secondsFromGMT: 0))
 
-        XCTAssertTrue(UsageTime.isSameDay("2026-06-30", as: reference))
-        XCTAssertFalse(UsageTime.isSameDay("2026-07-01", as: reference))
-        XCTAssertTrue(UsageTime.isSameMonth("2026-06-01", as: reference))
-        XCTAssertFalse(UsageTime.isSameMonth("2026-07-01", as: reference))
+        XCTAssertTrue(UsageTime.isSameDay("2026-06-30", as: reference, timeZone: utc))
+        XCTAssertFalse(UsageTime.isSameDay("2026-07-01", as: reference, timeZone: utc))
+        XCTAssertTrue(UsageTime.isSameMonth("2026-06-01", as: reference, timeZone: utc))
+        XCTAssertFalse(UsageTime.isSameMonth("2026-07-01", as: reference, timeZone: utc))
+    }
+
+    func testUsageDateComparisonSupportsChinaNaturalDay() throws {
+        let formatter = ISO8601DateFormatter()
+        let reference = try XCTUnwrap(formatter.date(from: "2026-07-24T16:30:00Z"))
+        let china = try XCTUnwrap(TimeZone(secondsFromGMT: 8 * 3_600))
+
+        XCTAssertTrue(UsageTime.isSameDay("2026-07-25", as: reference, timeZone: china))
+        XCTAssertFalse(UsageTime.isSameDay("2026-07-24", as: reference, timeZone: china))
+        XCTAssertEqual(UsageTime.offsetLabel(seconds: 8 * 3_600), "UTC+08:00")
+    }
+
+    func testTimestampRowsAreGroupedIntoTheExportTimeZoneDay() throws {
+        let directory = try makeTemporaryDirectory()
+        let amountURL = try write(
+            """
+            date,model,total_tokens,amount,currency
+            2026-07-24T16:30:00Z,deepseek-v4-pro,1,0.1,CNY
+            """,
+            named: "usage.csv",
+            in: directory
+        )
+        let china = try XCTUnwrap(TimeZone(secondsFromGMT: 8 * 3_600))
+
+        let record = try XCTUnwrap(
+            UsageCSVImporter.importRecords(
+                from: amountURL,
+                dataTimeZone: china
+            ).first
+        )
+
+        XCTAssertEqual(record.date, "2026-07-25")
+    }
+
+    func testUsageExportRequestUses31LocalDaysAndSelectedOffset() throws {
+        let formatter = ISO8601DateFormatter()
+        let reference = try XCTUnwrap(formatter.date(from: "2026-07-25T13:30:00Z"))
+        let expectedStart = try XCTUnwrap(formatter.date(from: "2026-06-24T16:00:00Z"))
+        let expectedEnd = try XCTUnwrap(formatter.date(from: "2026-07-25T16:00:00Z"))
+        let china = try XCTUnwrap(TimeZone(secondsFromGMT: 8 * 3_600))
+
+        let configuration = UsageExportRequestConfiguration.make(
+            referenceDate: reference,
+            timeZone: china
+        )
+
+        XCTAssertEqual(configuration.startSeconds, Int(expectedStart.timeIntervalSince1970))
+        XCTAssertEqual(configuration.endSeconds, Int(expectedEnd.timeIntervalSince1970))
+        XCTAssertEqual(configuration.timeZoneOffsetSeconds, 28_800)
+        XCTAssertEqual(configuration.startDate, "2026-06-25")
+        XCTAssertEqual(configuration.endDateExclusive, "2026-07-26")
     }
 
     func testOfficialZIPPreparesAmountAndCostFilesTogether() throws {
@@ -139,6 +226,52 @@ final class UsageImportTests: XCTestCase {
         XCTAssertEqual(Set(prepared.selectedNames), ["amount-20260724.csv", "cost-20260724.csv"])
         XCTAssertEqual(record.totalTokens, 2)
         XCTAssertEqual(record.costAmount(for: "USD"), decimal("0.25"))
+    }
+
+    func testOfficialExportRangeRejectsStaleAutomaticImport() throws {
+        let fileNames = [
+            "amount-2026-07-01_2026-07-26.csv",
+            "cost-2026-07-01_2026-07-26.csv",
+        ]
+        let range = try XCTUnwrap(UsageAutoImportService.exportDateRange(from: fileNames))
+        let placeholder = URL(fileURLWithPath: "/tmp/usage-export.zip")
+        let candidate = UsageAutoImportService.ImportCandidate(
+            sourceURL: placeholder,
+            preparedAmountCSVURL: placeholder,
+            preparedCostCSVURL: nil,
+            fingerprint: "test",
+            sourceName: placeholder.lastPathComponent,
+            selectedCSVNames: fileNames,
+            exportDateRange: range
+        )
+
+        XCTAssertTrue(range.contains("2026-07-25"))
+        XCTAssertNoThrow(
+            try UsageAutoImportService.validateCurrentExport(candidate, expectedDate: "2026-07-25")
+        )
+        XCTAssertThrowsError(
+            try UsageAutoImportService.validateCurrentExport(candidate, expectedDate: "2026-07-26")
+        ) { error in
+            guard case UsageCSVImportError.staleExportRange(
+                let startDate,
+                let endDateExclusive,
+                let expectedDate
+            ) = error else {
+                return XCTFail("Unexpected error: \(error)")
+            }
+            XCTAssertEqual(startDate, "2026-07-01")
+            XCTAssertEqual(endDateExclusive, "2026-07-26")
+            XCTAssertEqual(expectedDate, "2026-07-26")
+        }
+    }
+
+    func testOfficialExportRangeRequiresMatchingAmountAndCostFiles() {
+        XCTAssertThrowsError(
+            try UsageAutoImportService.exportDateRange(from: [
+                "amount-2026-07-01_2026-07-26.csv",
+                "cost-2026-07-02_2026-07-26.csv",
+            ])
+        )
     }
 
     func testLegacyUsageRecordDecodingDefaultsToCNY() throws {
@@ -189,6 +322,12 @@ final class UsageImportTests: XCTestCase {
     private func write(_ contents: String, named name: String, in directory: URL) throws -> URL {
         let url = directory.appendingPathComponent(name)
         try Data(contents.utf8).write(to: url)
+        return url
+    }
+
+    private func write(_ data: Data, named name: String, in directory: URL) throws -> URL {
+        let url = directory.appendingPathComponent(name)
+        try data.write(to: url)
         return url
     }
 

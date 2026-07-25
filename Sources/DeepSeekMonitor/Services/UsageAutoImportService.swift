@@ -13,6 +13,16 @@ enum UsageAutoImportService {
         let fingerprint: String
         let sourceName: String
         let selectedCSVNames: [String]
+        let exportDateRange: ExportDateRange?
+    }
+
+    struct ExportDateRange: Equatable {
+        let startDate: String
+        let endDateExclusive: String
+
+        func contains(_ date: String) -> Bool {
+            startDate <= date && date < endDateExclusive
+        }
     }
 
     static func autoImportRootFolderURL() throws -> URL {
@@ -77,8 +87,35 @@ enum UsageAutoImportService {
             preparedCostCSVURL: prepared.costURL,
             fingerprint: fingerprint,
             sourceName: sourceURL.lastPathComponent,
-            selectedCSVNames: prepared.selectedNames
+            selectedCSVNames: prepared.selectedNames,
+            exportDateRange: try exportDateRange(from: prepared.selectedNames)
         )
+    }
+
+    static func validateCurrentExport(
+        _ candidate: ImportCandidate,
+        expectedDate: String,
+        alternateExpectedDates: [String] = []
+    ) throws {
+        guard let range = candidate.exportDateRange else {
+            return
+        }
+        let expectedDates = [expectedDate] + alternateExpectedDates
+        guard expectedDates.contains(where: range.contains) == false else { return }
+        throw UsageCSVImportError.staleExportRange(
+            startDate: range.startDate,
+            endDateExclusive: range.endDateExclusive,
+            expectedDate: expectedDate
+        )
+    }
+
+    static func exportDateRange(from fileNames: [String]) throws -> ExportDateRange? {
+        let ranges = fileNames.compactMap(parseExportDateRange)
+        guard let first = ranges.first else { return nil }
+        guard ranges.allSatisfy({ $0 == first }) else {
+            throw UsageCSVImportError.detailed("ZIP 内 amount 与 cost 的日期范围不一致")
+        }
+        return first
     }
 
     static func markImported(_ fingerprint: String) {
@@ -203,6 +240,24 @@ enum UsageAutoImportService {
         }
 
         return sorted.first { $0.lastPathComponent.lowercased().contains("amount") } ?? sorted.first
+    }
+
+    private static func parseExportDateRange(from fileName: String) -> ExportDateRange? {
+        let name = URL(fileURLWithPath: fileName).lastPathComponent
+        let pattern = #"(?:amount|cost)-(\d{4}-\d{2}-\d{2})_(\d{4}-\d{2}-\d{2})\.csv$"#
+        guard let expression = try? NSRegularExpression(pattern: pattern),
+              let match = expression.firstMatch(
+                in: name,
+                range: NSRange(name.startIndex..<name.endIndex, in: name)
+              ),
+              let startRange = Range(match.range(at: 1), in: name),
+              let endRange = Range(match.range(at: 2), in: name) else {
+            return nil
+        }
+        return ExportDateRange(
+            startDate: String(name[startRange]),
+            endDateExclusive: String(name[endRange])
+        )
     }
 
     private static func clearManagedFolder(at url: URL) throws {

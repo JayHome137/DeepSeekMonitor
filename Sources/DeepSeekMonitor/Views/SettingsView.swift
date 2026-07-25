@@ -466,7 +466,7 @@ struct SettingsView: View {
                 .font(.subheadline)
                 .fontWeight(.medium)
 
-            Text("首次需要你手动登录一次 DeepSeek 平台。登录后，App 会按设定频率在后台导出并导入用量 ZIP。官方数据采用 UTC+0，且可能延迟约 5 分钟。")
+            Text("首次需要你手动登录一次 DeepSeek 平台。登录后，App 会按设定频率和数据时区导出最近 31 天用量，平台数据可能延迟约 5 分钟。")
                 .font(.caption)
                 .foregroundStyle(.secondary)
 
@@ -477,6 +477,32 @@ struct SettingsView: View {
             .toggleStyle(.switch)
             .scaleEffect(0.8, anchor: .leading)
             .frame(maxWidth: .infinity, alignment: .leading)
+
+            VStack(alignment: .leading, spacing: 8) {
+                HStack {
+                    Text("数据时区")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+
+                    Spacer()
+
+                    Text("当前数据 · \(viewModel.usageTimeZoneLabel)")
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+                }
+
+                Picker("数据时区", selection: Binding(
+                    get: { exportAutomation.timeZoneSelection },
+                    set: { exportAutomation.timeZoneSelection = $0 }
+                )) {
+                    ForEach(UsageTime.availableTimeZoneOptions) { option in
+                        Text(option.title).tag(option.id)
+                    }
+                }
+                .labelsHidden()
+                .pickerStyle(.menu)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
 
             VStack(alignment: .leading, spacing: 8) {
                 Text("自动导出频率")
@@ -672,12 +698,12 @@ struct SettingsView: View {
     }
 
     private func triggerAutoScan() {
-        viewModel.autoImportUsageIfNeeded()
-        if viewModel.totalTokens > 0 {
-            usageImportStatus = .success("扫描完成，已更新用量数据")
-        } else if let warning = viewModel.warningMessage, warning.contains("自动导入") {
-            usageImportStatus = .failure(warning)
-        } else {
+        switch viewModel.autoImportUsageIfNeeded() {
+        case .success(let fileNames):
+            usageImportStatus = .success("导入成功：\(fileNames.joined(separator: " + "))")
+        case .failure(let message):
+            usageImportStatus = .failure(message)
+        case .noNewFile:
             usageImportStatus = .failure("没有发现可导入的新 DeepSeek ZIP/CSV")
         }
     }
