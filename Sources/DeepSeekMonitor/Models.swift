@@ -1,15 +1,118 @@
 import Foundation
 
-enum UsageTime {
-    static let timeZone = TimeZone(secondsFromGMT: 0)!
+struct UsageTimeZoneOption: Identifiable, Hashable {
+    let id: String
+    let title: String
+}
 
-    static var calendar: Calendar {
+enum UsageTime {
+    static let systemSelection = "system"
+
+    private static let fixedOffsetPrefix = "offset:"
+    private static let configuredSelectionKey = "usage_time_zone_selection"
+    private static let importedOffsetKey = "usage_import_time_zone_offset_seconds"
+
+    static var availableTimeZoneOptions: [UsageTimeZoneOption] {
+        let systemOffset = TimeZone.current.secondsFromGMT(for: Date())
+        let system = UsageTimeZoneOption(
+            id: systemSelection,
+            title: "跟随系统（\(offsetLabel(seconds: systemOffset))）"
+        )
+        let fixed = (-12...14).map { hour in
+            let seconds = hour * 3_600
+            return UsageTimeZoneOption(
+                id: fixedSelection(offsetSeconds: seconds),
+                title: offsetLabel(seconds: seconds)
+            )
+        }
+        return [system] + fixed
+    }
+
+    static var configuredSelection: String {
+        normalizedSelection(
+            UserDefaults.standard.string(forKey: configuredSelectionKey) ?? systemSelection
+        )
+    }
+
+    static var configuredTimeZone: TimeZone {
+        timeZone(for: configuredSelection)
+    }
+
+    static var configuredTimeZoneLabel: String {
+        offsetLabel(seconds: configuredTimeZone.secondsFromGMT(for: Date()))
+    }
+
+    /// Date-only CSV rows inherit the zone used by the export that produced them.
+    /// Existing pre-timezone caches remain UTC until a new import succeeds.
+    static var timeZone: TimeZone {
+        guard UserDefaults.standard.object(forKey: importedOffsetKey) != nil else {
+            return TimeZone(secondsFromGMT: 0)!
+        }
+        let seconds = UserDefaults.standard.integer(forKey: importedOffsetKey)
+        return TimeZone(secondsFromGMT: seconds) ?? TimeZone(secondsFromGMT: 0)!
+    }
+
+    static var timeZoneLabel: String {
+        offsetLabel(seconds: timeZone.secondsFromGMT(for: Date()))
+    }
+
+    static func setConfiguredSelection(_ selection: String) {
+        UserDefaults.standard.set(normalizedSelection(selection), forKey: configuredSelectionKey)
+    }
+
+    static func markImported(using timeZone: TimeZone, referenceDate: Date = Date()) {
+        let seconds = timeZone.secondsFromGMT(for: referenceDate)
+        UserDefaults.standard.set(seconds, forKey: importedOffsetKey)
+    }
+
+    static func clearImportedTimeZone() {
+        UserDefaults.standard.removeObject(forKey: importedOffsetKey)
+    }
+
+    static func timeZone(for selection: String, referenceDate: Date = Date()) -> TimeZone {
+        let normalized = normalizedSelection(selection)
+        guard normalized != systemSelection,
+              let seconds = Int(normalized.dropFirst(fixedOffsetPrefix.count)),
+              let fixed = TimeZone(secondsFromGMT: seconds) else {
+            return .current
+        }
+        return fixed
+    }
+
+    static func normalizedSelection(_ selection: String) -> String {
+        guard selection != systemSelection,
+              selection.hasPrefix(fixedOffsetPrefix),
+              let seconds = Int(selection.dropFirst(fixedOffsetPrefix.count)),
+              seconds.isMultiple(of: 3_600),
+              (-12 * 3_600...14 * 3_600).contains(seconds) else {
+            return systemSelection
+        }
+        return fixedSelection(offsetSeconds: seconds)
+    }
+
+    static func fixedSelection(offsetSeconds: Int) -> String {
+        "\(fixedOffsetPrefix)\(offsetSeconds)"
+    }
+
+    static func offsetLabel(seconds: Int) -> String {
+        let sign = seconds < 0 ? "-" : "+"
+        let absolute = abs(seconds)
+        let hours = absolute / 3_600
+        let minutes = (absolute % 3_600) / 60
+        return String(format: "UTC%@%02d:%02d", sign, hours, minutes)
+    }
+
+    static func calendar(in timeZone: TimeZone) -> Calendar {
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = timeZone
         return calendar
     }
 
-    static func formatter(_ dateFormat: String) -> DateFormatter {
+    static var calendar: Calendar {
+        calendar(in: timeZone)
+    }
+
+    static func formatter(_ dateFormat: String, timeZone: TimeZone = UsageTime.timeZone) -> DateFormatter {
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "en_US_POSIX")
         formatter.timeZone = timeZone
@@ -17,21 +120,51 @@ enum UsageTime {
         return formatter
     }
 
-    static func day(from raw: String) -> Date? {
-        guard let date = formatter("yyyy-MM-dd").date(from: raw) else { return nil }
-        return calendar.startOfDay(for: date)
+    static func day(from raw: String, timeZone: TimeZone = UsageTime.timeZone) -> Date? {
+        guard let date = formatter("yyyy-MM-dd", timeZone: timeZone).date(from: raw) else { return nil }
+        return calendar(in: timeZone).startOfDay(for: date)
     }
 
-    static func isSameDay(_ raw: String, as referenceDate: Date) -> Bool {
-        guard let date = day(from: raw) else { return false }
-        return calendar.isDate(date, inSameDayAs: referenceDate)
+    static func isSameDay(_ raw: String, as referenceDate: Date, timeZone: TimeZone = UsageTime.timeZone) -> Bool {
+        guard let date = day(from: raw, timeZone: timeZone) else { return false }
+        return calendar(in: timeZone).isDate(date, inSameDayAs: referenceDate)
     }
 
-    static func isSameMonth(_ raw: String, as referenceDate: Date) -> Bool {
-        guard let date = day(from: raw) else { return false }
+    static func isSameMonth(_ raw: String, as referenceDate: Date, timeZone: TimeZone = UsageTime.timeZone) -> Bool {
+        guard let date = day(from: raw, timeZone: timeZone) else { return false }
+        let calendar = calendar(in: timeZone)
         let dateComponents = calendar.dateComponents([.year, .month], from: date)
         let referenceComponents = calendar.dateComponents([.year, .month], from: referenceDate)
         return dateComponents == referenceComponents
+    }
+}
+
+struct UsageExportRequestConfiguration: Equatable {
+    let startSeconds: Int
+    let endSeconds: Int
+    let timeZoneOffsetSeconds: Int
+    let startDate: String
+    let endDateExclusive: String
+
+    static func make(
+        referenceDate: Date = Date(),
+        timeZone: TimeZone,
+        inclusiveDayCount: Int = 31
+    ) -> UsageExportRequestConfiguration {
+        let calendar = UsageTime.calendar(in: timeZone)
+        let dayCount = max(1, min(inclusiveDayCount, 31))
+        let today = calendar.startOfDay(for: referenceDate)
+        let start = calendar.date(byAdding: .day, value: -(dayCount - 1), to: today) ?? today
+        let end = calendar.date(byAdding: .day, value: 1, to: today) ?? today
+        let formatter = UsageTime.formatter("yyyy-MM-dd", timeZone: timeZone)
+
+        return UsageExportRequestConfiguration(
+            startSeconds: Int(start.timeIntervalSince1970),
+            endSeconds: Int(end.timeIntervalSince1970),
+            timeZoneOffsetSeconds: timeZone.secondsFromGMT(for: referenceDate),
+            startDate: formatter.string(from: start),
+            endDateExclusive: formatter.string(from: end)
+        )
     }
 }
 
@@ -382,5 +515,6 @@ struct WidgetSnapshot: Codable {
     let proCostInCents: Int
     let balanceUpdatedAt: Date
     let usageUpdatedAt: Date
+    let usageTimeZoneOffsetSeconds: Int
     let lastUpdated: Date
 }

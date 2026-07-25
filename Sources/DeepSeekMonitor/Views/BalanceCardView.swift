@@ -9,6 +9,7 @@ struct BalanceCardView: View {
     let isAvailable: Bool
     let balanceCurrencyCode: String
     let usageCurrencyCode: String
+    let usageTimeZoneLabel: String
 
     @Environment(\.colorScheme) var colorScheme
 
@@ -36,13 +37,13 @@ struct BalanceCardView: View {
 
             HStack(spacing: 8) {
                 compactMetric(
-                    title: "今日消费 · UTC+0",
+                    title: "今日消费 · \(usageTimeZoneLabel)",
                     systemImage: "sun.max",
                     value: formattedCurrency(currentDayCost, currencyCode: usageCurrencyCode)
                 )
 
                 compactMetric(
-                    title: "本月消费 · UTC+0",
+                    title: "本月消费 · \(usageTimeZoneLabel)",
                     systemImage: "calendar",
                     value: formattedCurrency(currentMonthCost, currencyCode: usageCurrencyCode)
                 )
