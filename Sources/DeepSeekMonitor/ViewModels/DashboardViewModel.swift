@@ -2,12 +2,6 @@ import Foundation
 import Combine
 import Dispatch
 
-enum UsageAutoImportResult: Equatable {
-    case noNewFile
-    case success([String])
-    case failure(String)
-}
-
 // MARK: - Dashboard ViewModel
 //
 // 核心状态管理层，负责：
@@ -242,7 +236,6 @@ final class DashboardViewModel: ObservableObject {
                 let usageResp = try await usageTask
 
                 // ── 更新用量、费用和趋势 ──
-                UsageTime.markImported(using: TimeZone(secondsFromGMT: 0)!)
                 applyUsageRecords(usageResp.data)
                 LocalCache.shared.saveUsageRecords(usageResp.data)
                 usageLastUpdated = Date()
@@ -301,18 +294,12 @@ final class DashboardViewModel: ObservableObject {
         warningMessage = nil
     }
 
-    func importUsageCSV(
-        from url: URL,
-        costURL: URL? = nil,
-        dataTimeZone: TimeZone = UsageTime.configuredTimeZone
-    ) throws {
+    func importUsageCSV(from url: URL, costURL: URL? = nil) throws {
         let records = try UsageCSVImporter.importRecords(
             from: url,
             costURL: costURL,
-            defaultCurrencyCode: balanceCurrencyCode,
-            dataTimeZone: dataTimeZone
+            defaultCurrencyCode: balanceCurrencyCode
         )
-        UsageTime.markImported(using: dataTimeZone)
         LocalCache.shared.saveUsageRecords(records)
         applyUsageRecords(records)
         warningMessage = "已显示导入的用量记录"
@@ -331,49 +318,22 @@ final class DashboardViewModel: ObservableObject {
         return candidate.selectedCSVNames
     }
 
-    @discardableResult
-    func autoImportUsageIfNeeded() -> UsageAutoImportResult {
-        var activeCandidate: UsageAutoImportService.ImportCandidate?
+    func autoImportUsageIfNeeded() {
         do {
-            guard let candidate = try UsageAutoImportService.nextImportCandidate() else {
-                return .noNewFile
-            }
-            activeCandidate = candidate
-            let exportTimeZone = UsageTime.configuredTimeZone
-            let referenceDate = Date()
-            let expectedDate = UsageTime.formatter(
-                "yyyy-MM-dd",
-                timeZone: exportTimeZone
-            ).string(from: referenceDate)
-            let utcDate = UsageTime.formatter(
-                "yyyy-MM-dd",
-                timeZone: TimeZone(secondsFromGMT: 0)!
-            ).string(from: referenceDate)
-            try UsageAutoImportService.validateCurrentExport(
-                candidate,
-                expectedDate: expectedDate,
-                alternateExpectedDates: [utcDate]
-            )
+            guard let candidate = try UsageAutoImportService.nextImportCandidate() else { return }
             try importUsageCSV(
                 from: candidate.preparedAmountCSVURL,
-                costURL: candidate.preparedCostCSVURL,
-                dataTimeZone: exportTimeZone
+                costURL: candidate.preparedCostCSVURL
             )
             UsageAutoImportService.markImported(candidate.fingerprint)
             try? UsageAutoImportService.cleanupImportedSources(keeping: candidate.sourceURL)
-            UsageExportAutomationService.shared.reportImportSuccess(fileNames: candidate.selectedCSVNames)
-            return .success(candidate.selectedCSVNames)
         } catch {
-            let message: String
-            if let candidate = activeCandidate {
+            if let candidate = try? UsageAutoImportService.nextImportCandidate() {
                 let selectedNames = candidate.selectedCSVNames.joined(separator: " + ")
-                message = "自动导入 \(candidate.sourceName) -> \(selectedNames) 失败：\(error.localizedDescription)"
+                warningMessage = "自动导入 \(candidate.sourceName) -> \(selectedNames) 失败：\(error.localizedDescription)"
             } else {
-                message = "自动导入用量失败：\(error.localizedDescription)"
+                warningMessage = "自动导入用量失败：\(error.localizedDescription)"
             }
-            warningMessage = message
-            UsageExportAutomationService.shared.reportImportFailure(error.localizedDescription)
-            return .failure(message)
         }
     }
 
@@ -392,10 +352,6 @@ final class DashboardViewModel: ObservableObject {
 
     var currentMonthCostFormatted: String {
         formattedCurrency(currentMonthCost, currencyCode: usageCurrencyCode)
-    }
-
-    var usageTimeZoneLabel: String {
-        UsageTime.timeZoneLabel
     }
 
     var lastUpdated: Date? {

@@ -94,8 +94,7 @@ struct ContentView: View {
                 currentMonthCost: viewModel.currentMonthCost,
                 isAvailable: viewModel.isAccountAvailable,
                 balanceCurrencyCode: viewModel.balanceCurrencyCode,
-                usageCurrencyCode: viewModel.usageCurrencyCode,
-                usageTimeZoneLabel: viewModel.usageTimeZoneLabel
+                usageCurrencyCode: viewModel.usageCurrencyCode
             )
 
             UsageCardsView(

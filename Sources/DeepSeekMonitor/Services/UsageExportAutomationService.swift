@@ -40,22 +40,6 @@ final class UsageExportAutomationService: NSObject, ObservableObject {
         }
     }
 
-    @Published var timeZoneSelection: String {
-        didSet {
-            let normalized = UsageTime.normalizedSelection(timeZoneSelection)
-            if normalized != timeZoneSelection {
-                timeZoneSelection = normalized
-                return
-            }
-
-            UsageTime.setConfiguredSelection(normalized)
-            statusMessage = "数据时区已设为 \(UsageTime.configuredTimeZoneLabel)，等待下一次导入"
-            if isEnabled {
-                requestExport(manual: false, openWindowOnFailure: false)
-            }
-        }
-    }
-
     @Published private(set) var statusMessage: String
     @Published private(set) var isLoggedIn = false
     @Published private(set) var lastDownloadFileName: String?
@@ -84,7 +68,6 @@ final class UsageExportAutomationService: NSObject, ObservableObject {
         let interval = UserDefaults.standard.double(forKey: Self.intervalKey)
         isEnabled = enabled
         autoExportIntervalSeconds = Self.normalizedInterval(interval)
-        timeZoneSelection = UsageTime.configuredSelection
         statusMessage = enabled ? "自动导出待命中" : "自动导出未开启"
         super.init()
         if interval != autoExportIntervalSeconds {
@@ -126,15 +109,6 @@ final class UsageExportAutomationService: NSObject, ObservableObject {
 
     func triggerManualExport() {
         requestExport(manual: true, openWindowOnFailure: true)
-    }
-
-    func reportImportSuccess(fileNames: [String]) {
-        let details = fileNames.joined(separator: " + ")
-        statusMessage = "已导入 \(details) · \(UsageTime.timeZoneLabel)"
-    }
-
-    func reportImportFailure(_ message: String) {
-        statusMessage = "下载完成但导入失败：\(message)"
     }
 
     func armClickTrace() {
@@ -232,18 +206,8 @@ final class UsageExportAutomationService: NSObject, ObservableObject {
     private func attemptExportClick() {
         guard let webView else { return }
 
-        let exportConfiguration = UsageExportRequestConfiguration.make(
-            timeZone: UsageTime.configuredTimeZone
-        )
-
         let script = """
         (() => {
-          window.__deepseekMonitorExportConfig = {
-            startSec: \(exportConfiguration.startSeconds),
-            endSec: \(exportConfiguration.endSeconds),
-            tzSec: \(exportConfiguration.timeZoneOffsetSeconds)
-          };
-
           const normalized = (value) => (value || '').replace(/\\s+/g, ' ').trim();
 
           const visible = (el) => {
@@ -413,10 +377,9 @@ final class UsageExportAutomationService: NSObject, ObservableObject {
                     self.isLoggedIn = true
                     let text = state?["text"] as? String ?? "导出"
                     let context = state?["context"] as? String ?? ""
-                    let range = "\(exportConfiguration.startDate) 至 \(exportConfiguration.endDateExclusive) · \(UsageTime.configuredTimeZoneLabel)"
                     self.statusMessage = context.contains("每月用量")
-                        ? "已点按每月用量的\(text)，导出 \(range)"
-                        : "已触发\(text)，导出 \(range)"
+                        ? "已点按每月用量的\(text)，等待下载..."
+                        : "已触发\(text)，等待下载..."
                     self.beginDownloadWatch()
                     self.scheduleFollowUpExportClick(after: 1.0)
                     self.pendingExportRequest = false
@@ -763,22 +726,6 @@ final class UsageExportAutomationService: NSObject, ObservableObject {
               haystack.includes('usage');
           };
 
-          const rewriteUsageExportUrl = (rawUrl) => {
-            const config = window.__deepseekMonitorExportConfig;
-            if (!config || !rawUrl) return rawUrl;
-
-            try {
-              const url = new URL(rawUrl, location.href);
-              if (url.pathname !== '/api/v0/usage/export') return rawUrl;
-              url.searchParams.set('start', String(config.startSec));
-              url.searchParams.set('end', String(config.endSec));
-              url.searchParams.set('tz', String(config.tzSec));
-              return url.toString();
-            } catch {
-              return rawUrl;
-            }
-          };
-
           const blobStore = new Map();
 
           const postDownload = async (href, filename) => {
@@ -885,21 +832,9 @@ final class UsageExportAutomationService: NSObject, ObservableObject {
 
           const originalFetch = window.fetch.bind(window);
           window.fetch = async function() {
-            const requestArgs = Array.from(arguments);
-            const originalRequest = requestArgs[0];
-            const originalUrl = typeof originalRequest === 'string'
-              ? originalRequest
-              : (originalRequest && originalRequest.url) || '';
-            const rewrittenUrl = rewriteUsageExportUrl(originalUrl);
-            if (rewrittenUrl !== originalUrl) {
-              requestArgs[0] = originalRequest instanceof Request
-                ? new Request(rewrittenUrl, originalRequest)
-                : rewrittenUrl;
-            }
-
-            const response = await originalFetch.apply(window, requestArgs);
+            const response = await originalFetch.apply(window, arguments);
             try {
-              const requestUrl = rewrittenUrl || originalUrl;
+              const requestUrl = typeof arguments[0] === 'string' ? arguments[0] : (arguments[0] && arguments[0].url) || '';
               const contentType = response.headers.get('content-type') || '';
               const disposition = response.headers.get('content-disposition') || '';
               if (shouldCapture(requestUrl || response.url, contentType, disposition)) {
@@ -918,12 +853,8 @@ final class UsageExportAutomationService: NSObject, ObservableObject {
           const originalSend = XMLHttpRequest.prototype.send;
 
           XMLHttpRequest.prototype.open = function(method, url) {
-            const openArgs = Array.from(arguments);
-            const originalUrl = typeof url === 'string' ? url : '';
-            const rewrittenUrl = rewriteUsageExportUrl(originalUrl);
-            openArgs[1] = rewrittenUrl;
-            this.__deepseekUrl = rewrittenUrl;
-            return originalOpen.apply(this, openArgs);
+            this.__deepseekUrl = typeof url === 'string' ? url : '';
+            return originalOpen.apply(this, arguments);
           };
 
           XMLHttpRequest.prototype.send = function() {
