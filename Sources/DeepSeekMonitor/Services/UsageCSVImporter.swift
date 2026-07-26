@@ -5,6 +5,14 @@ enum UsageCSVImportError: LocalizedError {
     case emptyFile
     case unsupportedColumns
     case noValidRows
+    case invalidExportArchive(String)
+    case staleExportRange(
+        actualStartDate: String,
+        actualEndDateExclusive: String,
+        expectedStartDate: String,
+        expectedEndDateExclusive: String
+    )
+    case recordsOutsideExportRange(startDate: String, endDateExclusive: String)
     case detailed(String)
 
     var errorDescription: String? {
@@ -17,6 +25,17 @@ enum UsageCSVImportError: LocalizedError {
             return "CSV 列名无法识别，请选择 DeepSeek Usage 导出的 amount CSV"
         case .noValidRows:
             return "CSV 中没有可导入的有效用量记录"
+        case .invalidExportArchive(let reason):
+            return "DeepSeek 用量 ZIP 无效：\(reason)"
+        case .staleExportRange(
+            let actualStartDate,
+            let actualEndDateExclusive,
+            let expectedStartDate,
+            let expectedEndDateExclusive
+        ):
+            return "导出范围为 \(actualStartDate) 至 \(actualEndDateExclusive)，当前应为 \(expectedStartDate) 至 \(expectedEndDateExclusive)（UTC+0），已保留现有用量数据"
+        case .recordsOutsideExportRange(let startDate, let endDateExclusive):
+            return "CSV 内容包含 \(startDate) 至 \(endDateExclusive) 范围外的数据，已拒绝导入"
         case .detailed(let message):
             return message
         }
@@ -485,7 +504,12 @@ enum UsageCSVImporter {
         var field = ""
         var inQuotes = false
 
-        let characters = Array(text)
+        // Swift can treat CRLF as one grapheme cluster, so normalize line endings
+        // before parsing official Windows-style exports.
+        let normalizedText = text
+            .replacingOccurrences(of: "\r\n", with: "\n")
+            .replacingOccurrences(of: "\r", with: "\n")
+        let characters = Array(normalizedText)
         var index = 0
         while index < characters.count {
             let char = characters[index]

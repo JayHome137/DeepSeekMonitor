@@ -64,9 +64,15 @@ private struct UsageCardRow: View {
                 }
 
                 VStack(alignment: .leading, spacing: 3) {
-                    Text(model.displayName)
-                        .font(.system(size: 16, weight: .semibold))
-                        .foregroundStyle(.primary)
+                    HStack(spacing: 6) {
+                        Text(model.displayName)
+                            .font(.system(size: 16, weight: .semibold))
+                            .foregroundStyle(.primary)
+
+                        Text("近 7 日")
+                            .font(.caption2)
+                            .foregroundStyle(.tertiary)
+                    }
 
                     if let usage {
                         VStack(alignment: .leading, spacing: 5) {

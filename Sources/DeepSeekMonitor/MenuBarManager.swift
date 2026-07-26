@@ -235,9 +235,14 @@ final class MenuBarManager: NSObject {
             forName: .usageExportDownloadFinished,
             object: nil,
             queue: .main
-        ) { [weak self] _ in
+        ) { [weak self] notification in
             Task { @MainActor [weak self] in
-                self?.viewModel.autoImportUsageIfNeeded()
+                guard let self else { return }
+                if let event = notification.object as? UsageExportDownloadEvent {
+                    self.viewModel.importAutomaticUsageExport(event)
+                } else {
+                    self.viewModel.autoImportUsageIfNeeded()
+                }
             }
         }
         notificationObservers.append(observer)

@@ -2,7 +2,7 @@
 
 [中文 README](README.md) | The default README is now Chinese. This file keeps the English version of the same content.
 
-macOS menu bar app for monitoring DeepSeek V4 Flash / Pro balance, token usage, and billing. The current release is **v1.4.8**.
+macOS menu bar app for monitoring DeepSeek V4 Flash / Pro balance, token usage, and billing. The current release is **v1.4.9**.
 
 Requires **macOS 14 or later**; compatible with **Apple Silicon** and **Intel Macs** that can run macOS 14+.
 
@@ -30,8 +30,8 @@ Requires **macOS 14 or later**; compatible with **Apple Silicon** and **Intel Ma
 - **Native WidgetKit desktop widget** — medium-size macOS widget with glass-style UI, account balance, daily/monthly spend, and model cost shortcuts.
 - **Model detail side panel** — click V4 Flash or V4 Pro to open a side panel aligned to the main dashboard size, with daily token and request charts.
 - **Deep link widget actions** — widget rows open the model detail panel directly, without opening the full dashboard first.
-- **Usage import fallback** — import DeepSeek Usage ZIP/CSV exports when the official usage endpoint is unavailable; official ZIP files use both `amount.csv` and `cost.csv` for precise costs and currencies.
-- **Automatic usage export** — optional WKWebView automation at 5, 10, or 30-minute intervals.
+- **Usage import fallback** — import official current-month, last-7-day, or last-30-day DeepSeek Usage ZIP/CSV exports when the usage endpoint is unavailable; official ZIP files use both `amount.csv` and `cost.csv` for precise costs and currencies.
+- **Automatic usage export** — optional WKWebView automation that silently exports and imports current-month usage at 5, 10, or 30-minute intervals; only login actions show the web window.
 - **Balance refresh** — refresh the account balance every 30 seconds, 60 seconds, 2 minutes, or 5 minutes.
 - **Launch at login** — optional macOS login item so the widget data stays fresh after sign-in.
 - **Local cache** — dashboard and widget data are available immediately after app restart.

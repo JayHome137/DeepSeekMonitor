@@ -455,7 +455,7 @@ private struct MediumWidgetView: View {
 
     private var rightColumn: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("模型用量")
+            Text("模型用量 · 近 7 日")
                 .font(.system(size: 13, weight: .semibold))
                 .foregroundStyle(widgetTextMain(for: colorScheme))
                 .widgetAccentable(false)
@@ -492,7 +492,15 @@ private func currencySymbol(_ code: String) -> String {
 }
 
 private func currency(_ value: Double, code: String) -> String {
-    "\(currencySymbol(code))\(String(format: "%.2f", value))"
+    let formatter = NumberFormatter()
+    formatter.locale = Locale(identifier: "en_US_POSIX")
+    formatter.numberStyle = .decimal
+    formatter.usesGroupingSeparator = false
+    formatter.minimumFractionDigits = 2
+    formatter.maximumFractionDigits = 2
+    formatter.roundingMode = .down
+    let amount = formatter.string(from: NSNumber(value: value)) ?? "0.00"
+    return "\(currencySymbol(code))\(amount)"
 }
 
 private func costFormatted(_ cents: Int, code: String) -> String {

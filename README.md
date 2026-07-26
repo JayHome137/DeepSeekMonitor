@@ -2,7 +2,7 @@
 
 [English README](README_EN.MD) | 当前默认 README 为中文说明，英文版请查看 `README_EN.MD`。
 
-DeepSeek Monitor 是一款 macOS 菜单栏应用，用于监控 DeepSeek V4 Flash / Pro 的账户余额、Token 用量和消费情况。当前发布版本为 **v1.4.8**。
+DeepSeek Monitor 是一款 macOS 菜单栏应用，用于监控 DeepSeek V4 Flash / Pro 的账户余额、Token 用量和消费情况。当前发布版本为 **v1.4.9**。
 
 需要 **macOS 14 或更高版本**；支持 **M 系列 Mac**，也支持仍可升级到 macOS 14+ 的 **Intel Mac**。
 
@@ -30,8 +30,8 @@ DeepSeek Monitor 是一款 macOS 菜单栏应用，用于监控 DeepSeek V4 Flas
 - **原生 WidgetKit 桌面小组件**：中号 macOS 小组件，使用玻璃风格 UI，展示余额、日/月消费和模型费用入口。
 - **模型详情侧页**：点击 V4 Flash 或 V4 Pro 后打开与主页等宽等高的侧页，查看每日 Token 和请求次数图表。
 - **小组件深链操作**：点击小组件内的模型行会直接打开对应模型详情侧页，不会先弹出完整主页。
-- **用量导入兜底**：当官方用量接口不可用时，可导入 DeepSeek Usage ZIP/CSV；官方 ZIP 会同时读取 `amount.csv` 和 `cost.csv`，保留精确费用与币种。
-- **自动用量导出**：可选 WKWebView 自动化，按 5 分钟、10 分钟或 30 分钟在 DeepSeek Platform 页面触发导出。
+- **用量导入兜底**：当官方用量接口不可用时，可导入 DeepSeek 官方本月、近 7 日或近 30 日 Usage ZIP/CSV；官方 ZIP 会同时读取 `amount.csv` 和 `cost.csv`，保留精确费用与币种。
+- **自动用量导出**：可选 WKWebView 自动化，按 5 分钟、10 分钟或 30 分钟静默导出并导入本月用量；只有登录操作会显示网页窗口。
 - **余额刷新设置**：支持 30 秒、60 秒、2 分钟、5 分钟自动刷新账户余额。
 - **开机自启**：可选注册 macOS 登录项，登录后自动启动应用并保持小组件数据更新。
 - **本地缓存**：应用重启后立即显示上次数据，避免白屏。

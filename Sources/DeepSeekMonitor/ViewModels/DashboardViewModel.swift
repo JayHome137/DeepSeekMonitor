@@ -2,6 +2,12 @@ import Foundation
 import Combine
 import Dispatch
 
+enum UsageAutoImportResult {
+    case noNewFile
+    case success([String])
+    case failure(String)
+}
+
 // MARK: - Dashboard ViewModel
 //
 // 核心状态管理层，负责：
@@ -96,6 +102,7 @@ final class DashboardViewModel: ObservableObject {
     private var importMonitors: [DirectoryChangeMonitor] = []
     private var importDebounceWorkItem: DispatchWorkItem?
     private var isRefreshing = false
+    private var lastBalanceResponse: BalanceResponse?
 
     // MARK: - Init
 
@@ -222,22 +229,20 @@ final class DashboardViewModel: ObservableObject {
             let balanceResp = try await balanceTask
 
             // ── 更新余额 ──
-            if let info = balanceResp.preferredBalanceInfo {
-                balanceInfo = info
-                isAccountAvailable = balanceResp.isAvailable
-                totalBalance = Double(info.totalBalance) ?? 0
-                grantedBalance = Double(info.grantedBalance) ?? 0
-                toppedUpBalance = Double(info.toppedUpBalance) ?? 0
-                balanceCurrencyCode = normalizedCurrencyCode(info.currency)
-            }
+            lastBalanceResponse = balanceResp
+            applyBalanceResponse(balanceResp)
             balanceLastUpdated = Date()
 
             do {
                 let usageResp = try await usageTask
 
                 // ── 更新用量、费用和趋势 ──
-                applyUsageRecords(usageResp.data)
-                LocalCache.shared.saveUsageRecords(usageResp.data)
+                let recentRange = UsageAutoImportService.expectedRecentExportRange()
+                let mergedRecords = LocalCache.shared.mergeUsageRecords(
+                    usageResp.data,
+                    replacing: recentRange
+                )
+                applyUsageRecords(mergedRecords)
                 usageLastUpdated = Date()
             } catch {
                 handleUsageFailure(error)
@@ -292,17 +297,25 @@ final class DashboardViewModel: ObservableObject {
         usageLastUpdated = nil
         errorMessage = nil
         warningMessage = nil
+        lastBalanceResponse = nil
     }
 
-    func importUsageCSV(from url: URL, costURL: URL? = nil) throws {
+    func importUsageCSV(
+        from url: URL,
+        costURL: URL? = nil,
+        replacing range: UsageAutoImportService.ExportDateRange? = nil
+    ) throws {
         let records = try UsageCSVImporter.importRecords(
             from: url,
             costURL: costURL,
             defaultCurrencyCode: balanceCurrencyCode
         )
-        LocalCache.shared.saveUsageRecords(records)
-        applyUsageRecords(records)
-        warningMessage = "已显示导入的用量记录"
+        try UsageAutoImportService.validateRecords(records, within: range)
+        let mergedRecords = LocalCache.shared.mergeUsageRecords(records, replacing: range)
+        applyUsageRecords(mergedRecords)
+        warningMessage = LocalCache.shared.needsCurrentMonthBaseline()
+            ? "近 7 日用量已更新，本月历史仍需导入完整的本月 ZIP"
+            : "已显示导入的用量记录"
         usageLastUpdated = Date()
         saveCache()
     }
@@ -310,30 +323,71 @@ final class DashboardViewModel: ObservableObject {
     @discardableResult
     func importUsageExport(from url: URL) throws -> [String] {
         let candidate = try UsageAutoImportService.prepareImportCandidate(from: url)
+        return try importUsageCandidate(candidate)
+    }
+
+    @discardableResult
+    func importAutomaticUsageExport(_ event: UsageExportDownloadEvent) -> UsageAutoImportResult {
+        var candidate: UsageAutoImportService.ImportCandidate?
+        do {
+            let prepared = try UsageAutoImportService.prepareImportCandidate(from: event.fileURL)
+            candidate = prepared
+            let fileNames = try importUsageCandidate(prepared, expectedRange: event.expectedRange)
+            try? UsageAutoImportService.cleanupImportedSources(keeping: event.fileURL)
+            UsageExportAutomationService.shared.reportImportSuccess(fileNames: fileNames)
+            return .success(fileNames)
+        } catch {
+            let sourceName = candidate?.sourceName ?? event.fileURL.lastPathComponent
+            try? FileManager.default.removeItem(at: event.fileURL)
+            let message = "自动导入 \(sourceName) 失败：\(error.localizedDescription)"
+            warningMessage = message
+            UsageExportAutomationService.shared.reportImportFailure(error.localizedDescription)
+            return .failure(message)
+        }
+    }
+
+    private func importUsageCandidate(
+        _ candidate: UsageAutoImportService.ImportCandidate,
+        expectedRange: UsageAutoImportService.ExportDateRange? = nil
+    ) throws -> [String] {
+        if let expectedRange {
+            try UsageAutoImportService.validateAutomaticExport(
+                candidate,
+                expectedRange: expectedRange
+            )
+        }
         try importUsageCSV(
             from: candidate.preparedAmountCSVURL,
-            costURL: candidate.preparedCostCSVURL
+            costURL: candidate.preparedCostCSVURL,
+            replacing: candidate.exportDateRange
         )
         UsageAutoImportService.markImported(candidate.fingerprint)
         return candidate.selectedCSVNames
     }
 
-    func autoImportUsageIfNeeded() {
+    @discardableResult
+    func autoImportUsageIfNeeded() -> UsageAutoImportResult {
+        var activeCandidate: UsageAutoImportService.ImportCandidate?
         do {
-            guard let candidate = try UsageAutoImportService.nextImportCandidate() else { return }
-            try importUsageCSV(
-                from: candidate.preparedAmountCSVURL,
-                costURL: candidate.preparedCostCSVURL
-            )
-            UsageAutoImportService.markImported(candidate.fingerprint)
-            try? UsageAutoImportService.cleanupImportedSources(keeping: candidate.sourceURL)
-        } catch {
-            if let candidate = try? UsageAutoImportService.nextImportCandidate() {
-                let selectedNames = candidate.selectedCSVNames.joined(separator: " + ")
-                warningMessage = "自动导入 \(candidate.sourceName) -> \(selectedNames) 失败：\(error.localizedDescription)"
-            } else {
-                warningMessage = "自动导入用量失败：\(error.localizedDescription)"
+            guard let candidate = try UsageAutoImportService.nextImportCandidate() else {
+                return .noNewFile
             }
+            activeCandidate = candidate
+            let fileNames = try importUsageCandidate(candidate)
+            try? UsageAutoImportService.cleanupImportedSources(keeping: candidate.sourceURL)
+            UsageExportAutomationService.shared.reportImportSuccess(fileNames: fileNames)
+            return .success(fileNames)
+        } catch {
+            let message: String
+            if let candidate = activeCandidate {
+                let selectedNames = candidate.selectedCSVNames.joined(separator: " + ")
+                message = "自动导入 \(candidate.sourceName) -> \(selectedNames) 失败：\(error.localizedDescription)"
+            } else {
+                message = "自动导入用量失败：\(error.localizedDescription)"
+            }
+            warningMessage = message
+            UsageExportAutomationService.shared.reportImportFailure(error.localizedDescription)
+            return .failure(message)
         }
     }
 
@@ -498,9 +552,15 @@ final class DashboardViewModel: ObservableObject {
     }
 
     private func applyUsageRecords(_ records: [UsageRecord]) {
-        usageCurrencyCode = preferredUsageCurrency(from: records)
-        aggregateUsage(records)
-        buildDailyUsage(from: records)
+        let recentRange = UsageAutoImportService.expectedRecentExportRange()
+        let recentRecords = records.filter { recentRange.contains($0.date) }
+        let currencyRecords = recentRecords.isEmpty ? records : recentRecords
+        usageCurrencyCode = preferredUsageCurrency(from: currencyRecords)
+        if let lastBalanceResponse {
+            applyBalanceResponse(lastBalanceResponse)
+        }
+        aggregateUsage(recentRecords)
+        buildDailyUsage(from: recentRecords)
         currentDayCost = computeCurrentDayCost(from: records)
         currentMonthCost = computeCurrentMonthCost(from: records)
     }
@@ -660,14 +720,39 @@ final class DashboardViewModel: ObservableObject {
     }
 
     private func preferredUsageCurrency(from records: [UsageRecord]) -> String {
-        let currencies = Set(records.flatMap { $0.costByCurrency.keys }.map(normalizedCurrencyCode))
-        if currencies.contains(balanceCurrencyCode) {
+        var totals: [String: Decimal] = [:]
+        for record in records {
+            for (currency, amount) in record.costByCurrency {
+                totals[normalizedCurrencyCode(currency), default: .zero] += amount
+            }
+        }
+
+        let nonZeroCurrencies = totals
+            .filter { $0.value != .zero }
+            .map(\.key)
+        if nonZeroCurrencies.count == 1, let onlyCurrency = nonZeroCurrencies.first {
+            return onlyCurrency
+        }
+        if nonZeroCurrencies.contains(balanceCurrencyCode) {
             return balanceCurrencyCode
         }
-        if currencies.contains("CNY") {
-            return "CNY"
+        if let firstNonZero = nonZeroCurrencies.sorted().first {
+            return firstNonZero
         }
-        return currencies.sorted().first ?? balanceCurrencyCode
+        if totals.keys.contains(balanceCurrencyCode) {
+            return balanceCurrencyCode
+        }
+        return totals.keys.sorted().first ?? balanceCurrencyCode
+    }
+
+    private func applyBalanceResponse(_ response: BalanceResponse) {
+        guard let info = response.preferredBalanceInfo(matching: usageCurrencyCode) else { return }
+        balanceInfo = info
+        isAccountAvailable = response.isAvailable
+        totalBalance = Double(info.totalBalance) ?? 0
+        grantedBalance = Double(info.grantedBalance) ?? 0
+        toppedUpBalance = Double(info.toppedUpBalance) ?? 0
+        balanceCurrencyCode = normalizedCurrencyCode(info.currency)
     }
 
     private func buildModelDailyPoints(from values: [Date: (tokens: Int, hit: Int, miss: Int, output: Int, requests: Int)]) -> [ModelDailyUsagePoint] {
