@@ -24,7 +24,7 @@ struct UsageChartView: View {
                 Image(systemName: "chart.bar.fill")
                     .font(.caption)
                     .foregroundStyle(Theme.brand)
-                Text("消耗趋势")
+                Text("近 7 日消耗趋势")
                     .font(.caption)
                     .fontWeight(.medium)
                     .foregroundStyle(.secondary)

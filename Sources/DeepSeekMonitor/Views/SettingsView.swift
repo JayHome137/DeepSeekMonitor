@@ -57,6 +57,7 @@ struct SettingsView: View {
 
     enum UsageImportStatus: Equatable {
         case idle
+        case info(String)
         case success(String)
         case failure(String)
     }
@@ -389,7 +390,7 @@ struct SettingsView: View {
                 .font(.subheadline)
                 .fontWeight(.medium)
 
-            Text("实时用量接口暂未开放。自动网页导出的文件会先进入 App 的专用导入目录，并在检测到新文件后自动解压导入。手动扫描也只会检查这个专用导入目录。")
+            Text("实时用量接口暂未开放。自动网页导出的文件会先进入 App 的专用导入目录，并在检测到新文件后自动解压导入。手动选择支持官方本月、近 7 天和近 30 天 ZIP。")
                 .font(.caption)
                 .foregroundStyle(.secondary)
 
@@ -448,6 +449,10 @@ struct SettingsView: View {
             switch usageImportStatus {
             case .idle:
                 EmptyView()
+            case .info(let message):
+                Label(message, systemImage: "info.circle.fill")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             case .success(let message):
                 Label(message, systemImage: "checkmark.circle.fill")
                     .font(.caption)
@@ -466,7 +471,7 @@ struct SettingsView: View {
                 .font(.subheadline)
                 .fontWeight(.medium)
 
-            Text("首次需要你手动登录一次 DeepSeek 平台。登录后，App 会按设定频率在后台导出并导入用量 ZIP。官方数据采用 UTC+0，且可能延迟约 5 分钟。")
+            Text("首次需要你手动登录一次 DeepSeek 平台。登录后，App 会按设定频率静默导出并导入本月用量 ZIP。官方数据采用 UTC+0，且可能延迟约 5 分钟。")
                 .font(.caption)
                 .foregroundStyle(.secondary)
 
@@ -507,7 +512,7 @@ struct SettingsView: View {
                 }) {
                     HStack(spacing: 4) {
                         Image(systemName: "arrow.down.doc")
-                        Text("立即尝试导出")
+                        Text("立即同步本月")
                     }
                     .font(.caption)
                 }
@@ -672,13 +677,13 @@ struct SettingsView: View {
     }
 
     private func triggerAutoScan() {
-        viewModel.autoImportUsageIfNeeded()
-        if viewModel.totalTokens > 0 {
-            usageImportStatus = .success("扫描完成，已更新用量数据")
-        } else if let warning = viewModel.warningMessage, warning.contains("自动导入") {
-            usageImportStatus = .failure(warning)
-        } else {
-            usageImportStatus = .failure("没有发现可导入的新 DeepSeek ZIP/CSV")
+        switch viewModel.autoImportUsageIfNeeded() {
+        case .success(let fileNames):
+            usageImportStatus = .success("导入成功：\(fileNames.joined(separator: " + "))")
+        case .failure(let message):
+            usageImportStatus = .failure(message)
+        case .noNewFile:
+            usageImportStatus = .info("已检查专用导入目录，当前没有新文件")
         }
     }
 

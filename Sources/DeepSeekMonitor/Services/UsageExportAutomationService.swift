@@ -6,9 +6,28 @@ extension Notification.Name {
     static let usageExportDownloadFinished = Notification.Name("usage_export_download_finished")
 }
 
+struct UsageExportDownloadEvent {
+    let taskID: UUID
+    let fileURL: URL
+    let expectedRange: UsageAutoImportService.ExportDateRange
+}
+
 private enum UsageExportScriptMessage {
     static let download = "usageExportDownload"
     static let clickTrace = "usageExportClickTrace"
+}
+
+private enum UsageExportAutomationState {
+    case idle
+    case locatingRangeTrigger
+    case selectingRange
+    case locatingExportButton
+    case waitingForDownload
+}
+
+private struct UsageExportTask {
+    let id: UUID
+    let expectedRange: UsageAutoImportService.ExportDateRange
 }
 
 @MainActor
@@ -58,10 +77,17 @@ final class UsageExportAutomationService: NSObject, ObservableObject {
     private var shouldShowWindowOnFailure = false
     private var lastAttemptAt: Date?
     private var activeDownload: WKDownload?
+    private var activeDownloadTaskID: UUID?
+    private var activeDownloadDestination: URL?
+    private var activeDownloadFinalDestination: URL?
+    private var rangeTriggerRetryCount = 0
+    private var rangeOptionRetryCount = 0
     private var exportLookupRetryCount = 0
+    private var automationState: UsageExportAutomationState = .idle
     private var downloadWatchTimer: Timer?
     private var exportTriggeredAt: Date?
     private var downloadWatchAttempts = 0
+    private var activeExportTask: UsageExportTask?
 
     private override init() {
         let enabled = UserDefaults.standard.bool(forKey: Self.enabledKey)
@@ -82,13 +108,15 @@ final class UsageExportAutomationService: NSObject, ObservableObject {
                 self?.handleTimerTick()
             }
         }
+        if isEnabled {
+            requestExport(manual: false, openWindowOnFailure: false)
+        }
     }
 
     func stop() {
         timer?.invalidate()
         timer = nil
-        downloadWatchTimer?.invalidate()
-        downloadWatchTimer = nil
+        resetAutomationState()
     }
 
     func closeWindow() {
@@ -108,7 +136,15 @@ final class UsageExportAutomationService: NSObject, ObservableObject {
     }
 
     func triggerManualExport() {
-        requestExport(manual: true, openWindowOnFailure: true)
+        requestExport(manual: true, openWindowOnFailure: false)
+    }
+
+    func reportImportSuccess(fileNames: [String]) {
+        statusMessage = "已导入 \(fileNames.joined(separator: " + ")) · UTC+0"
+    }
+
+    func reportImportFailure(_ message: String) {
+        statusMessage = "下载完成但导入失败：\(message)"
     }
 
     func armClickTrace() {
@@ -123,6 +159,10 @@ final class UsageExportAutomationService: NSObject, ObservableObject {
 
     private func handleTimerTick() {
         guard isEnabled else { return }
+        guard window?.isVisible != true else {
+            statusMessage = "登录窗口打开中，本次后台导出已暂缓"
+            return
+        }
         requestExport(manual: false, openWindowOnFailure: false)
     }
 
@@ -137,27 +177,48 @@ final class UsageExportAutomationService: NSObject, ObservableObject {
     }
 
     private func requestExport(manual: Bool, openWindowOnFailure: Bool) {
+        guard automationState == .idle else {
+            if manual {
+                statusMessage = "已有本月同步任务正在进行"
+            }
+            return
+        }
+        guard manual || window?.isVisible != true else {
+            statusMessage = "登录窗口打开中，本次后台导出已暂缓"
+            return
+        }
         if let lastAttemptAt, Date().timeIntervalSince(lastAttemptAt) < 25, manual == false {
             return
         }
 
+        resetAutomationState()
         lastAttemptAt = Date()
         pendingExportRequest = true
+        automationState = .locatingRangeTrigger
+        rangeTriggerRetryCount = 0
+        rangeOptionRetryCount = 0
         exportLookupRetryCount = 0
         shouldShowWindowOnFailure = openWindowOnFailure
+        activeExportTask = UsageExportTask(
+            id: UUID(),
+            expectedRange: UsageAutoImportService.expectedCurrentMonthExportRange()
+        )
 
         let webView = ensureWebView()
-        let currentURL = webView.url?.absoluteString ?? ""
-        if currentURL.contains("/usage") {
-            attemptExportClick()
-        } else {
-            statusMessage = "正在打开 DeepSeek 用量页面..."
-            webView.load(URLRequest(url: Self.usageURL))
-            if openWindowOnFailure {
-                ensureWindow(with: webView)
-                window?.makeKeyAndOrderFront(nil)
-                NSApp.activate(ignoringOtherApps: true)
-            }
+        if openWindowOnFailure == false {
+            window?.orderOut(nil)
+        }
+        statusMessage = "正在后台刷新 DeepSeek 本月用量..."
+        let request = URLRequest(
+            url: Self.usageURL,
+            cachePolicy: .reloadIgnoringLocalCacheData,
+            timeoutInterval: 30
+        )
+        webView.load(request)
+        if openWindowOnFailure {
+            ensureWindow(with: webView)
+            window?.makeKeyAndOrderFront(nil)
+            NSApp.activate(ignoringOtherApps: true)
         }
     }
 
@@ -204,359 +265,545 @@ final class UsageExportAutomationService: NSObject, ObservableObject {
     }
 
     private func attemptExportClick() {
-        guard let webView else { return }
+        guard let webView,
+              automationState == .locatingRangeTrigger,
+              let taskID = activeExportTask?.id else { return }
 
         let script = """
         (() => {
-          const normalized = (value) => (value || '').replace(/\\s+/g, ' ').trim();
-
+          window.__deepseekActiveExportTaskID = '\(taskID.uuidString)';
+          const normalize = (value) => (value || '').replace(/\\s+/g, ' ').trim();
+          const compact = (value) => normalize(value).toLowerCase().replace(/\\s+/g, '');
           const visible = (el) => {
             if (!el) return false;
             const rect = el.getBoundingClientRect();
             const style = window.getComputedStyle(el);
-            return rect.width > 0 && rect.height > 0 && style.visibility !== 'hidden' && style.display !== 'none';
+            return rect.width > 0 && rect.height > 0 && style.visibility !== 'hidden' && style.display !== 'none' && Number(style.opacity || 1) > 0;
           };
-
-          const textOf = (el) => normalized([
-            el.innerText,
-            el.textContent,
-            el.getAttribute && el.getAttribute('aria-label'),
-            el.getAttribute && el.getAttribute('title')
-          ].filter(Boolean).join(' '));
-
-          const contextOf = (el) => {
-            const parts = [];
-            let current = el;
-            for (let i = 0; current && i < 5; i += 1) {
-              const text = textOf(current);
-              if (text) {
-                parts.push(text);
-              }
-              current = current.parentElement;
-            }
-            return normalized(parts.join(' | '));
-          };
-
-          const uniqueElements = (elements) => {
-            const seen = new Set();
-            return elements.filter((el) => {
-              if (!el || seen.has(el)) return false;
-              seen.add(el);
-              return true;
-            });
-          };
-
+          const textOf = (el) => normalize(
+            el.innerText ||
+            el.textContent ||
+            el.getAttribute && el.getAttribute('aria-label') ||
+            el.getAttribute && el.getAttribute('title') ||
+            ''
+          );
           const activate = (el) => {
             if (!el) return false;
             try { el.scrollIntoView({ block: 'center', inline: 'center' }); } catch {}
-
             const rect = el.getBoundingClientRect();
-            const point = {
-              clientX: Math.max(1, Math.min(window.innerWidth - 1, rect.left + rect.width / 2)),
-              clientY: Math.max(1, Math.min(window.innerHeight - 1, rect.top + rect.height / 2)),
+            const eventInit = {
+              clientX: rect.left + rect.width / 2,
+              clientY: rect.top + rect.height / 2,
               bubbles: true,
               cancelable: true,
               composed: true,
-              button: 0,
-              buttons: 1
+              button: 0
             };
-
-            const hit = document.elementFromPoint(point.clientX, point.clientY);
-            const chain = [];
-            let current = hit;
-            while (current && current !== document.body && chain.length < 6) {
-              chain.push(current);
-              current = current.parentElement;
+            if (typeof el.focus === 'function') el.focus();
+            for (const type of ['pointerdown', 'mousedown', 'pointerup', 'mouseup']) {
+              const EventType = type.startsWith('pointer') && typeof PointerEvent !== 'undefined' ? PointerEvent : MouseEvent;
+              el.dispatchEvent(new EventType(type, eventInit));
             }
-
-            const targets = uniqueElements([
-              el,
-              hit,
-              ...chain,
-              el.closest && el.closest('[role="button"]'),
-              el.parentElement
-            ]);
-
-            const eventTypes = ['pointerover', 'mouseover', 'pointerenter', 'mouseenter', 'pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click'];
-            for (const target of targets) {
-              if (typeof target.focus === 'function') {
-                target.focus();
-              }
-              for (const type of eventTypes) {
-                const EventCtor = type.startsWith('pointer') && typeof PointerEvent !== 'undefined' ? PointerEvent : MouseEvent;
-                target.dispatchEvent(new EventCtor(type, point));
-              }
-              if (typeof target.click === 'function') {
-                target.click();
-              }
-            }
-
-            return {
-              hitTag: hit && hit.tagName ? hit.tagName.toLowerCase() : '',
-              hitText: hit ? textOf(hit) : ''
-            };
+            if (typeof el.click === 'function') el.click();
+            return true;
           };
 
-          const scoreOf = (el) => {
-            const text = textOf(el);
-            if (!text) return -1;
+          const needsLogin = !!document.querySelector('input[type="password"]') || /sign_in|login/i.test(location.href);
+          if (needsLogin) return { opened: false, needsLogin: true, url: location.href };
 
-            const lowerText = text.toLowerCase();
-            const role = (el.getAttribute && el.getAttribute('role') || '').toLowerCase();
-            const tag = (el.tagName || '').toLowerCase();
-            const context = contextOf(el);
-            const lowerContext = context.toLowerCase();
-            const cursor = window.getComputedStyle(el).cursor || '';
+          const labelNames = ['时间维度', '时间范围', 'time range', 'date range', 'time dimension', 'time'];
+          const presetNames = new Set(['近7天', '近30天', '本月', '上月', 'last7days', 'last30days', 'thismonth', 'lastmonth']);
+          const allVisible = Array.from(document.querySelectorAll('button, [role="button"], [aria-haspopup], [tabindex], label, p, span, div')).filter(visible);
+          const labels = allVisible.filter((el) => {
+            const text = normalize(textOf(el)).toLowerCase();
+            return labelNames.some((name) => text === name || (name !== 'time' && text.includes(name)));
+          });
+          const seen = new Set();
+          const candidates = [];
+
+          for (const node of allVisible) {
+            const cursor = window.getComputedStyle(node).cursor || '';
+            const target = node.closest && node.closest('button, [role="button"], [aria-haspopup], [tabindex]');
+            const candidate = target || (cursor === 'pointer' ? node : null);
+            if (!candidate || seen.has(candidate) || !visible(candidate)) continue;
+            seen.add(candidate);
+
+            const text = textOf(candidate);
+            const compactText = compact(text);
+            const lowerText = normalize(text).toLowerCase();
+            if (!text || lowerText === '导出' || lowerText === 'export') continue;
 
             let score = 0;
-            if (role === 'button') score += 80;
-            if (tag === 'button') score += 60;
-            if (tag === 'div') score += 20;
-            if (cursor === 'pointer') score += 20;
-            if (text === '导出') score += 200;
-            if (text.includes('导出')) score += 80;
-            if (lowerText.includes('export')) score += 40;
-            if (context.includes('每月用量')) score += 160;
-            if (lowerContext.includes('usage')) score += 20;
-            if (lowerContext.includes('chart')) score -= 30;
-            if (lowerContext.includes('设置')) score -= 40;
-            return score;
-          };
+            const role = (candidate.getAttribute('role') || '').toLowerCase();
+            const tag = (candidate.tagName || '').toLowerCase();
+            const hasPopup = candidate.hasAttribute('aria-haspopup');
+            let relevance = 0;
+            if (hasPopup) score += 180;
+            if (role === 'button') score += 60;
+            if (tag === 'button') score += 50;
+            if (presetNames.has(compactText)) {
+              score += 180;
+              relevance += 2;
+            }
+            if (/\\d{1,4}[\\/-]\\d{1,2}.*[-~至].*\\d{1,4}[\\/-]\\d{1,2}/.test(text)) {
+              score += 130;
+              relevance += 2;
+            }
+            if (text.length <= 32) score += 20;
 
-          const passwordField = document.querySelector('input[type="password"]');
-          const candidates = Array.from(document.querySelectorAll('button, a, [role="button"], span, div')).filter(visible);
-          const ranked = candidates
-            .map((el) => ({ el, score: scoreOf(el) }))
-            .filter((item) => item.score > 0)
-            .sort((lhs, rhs) => rhs.score - lhs.score);
-          const best = ranked[0];
-          const exportElement = best && best.el;
+            for (const label of labels) {
+              if (candidate === label || candidate.contains(label) || label.contains(candidate)) {
+                score += 140;
+                relevance += 2;
+              }
+              const labelRect = label.getBoundingClientRect();
+              const candidateRect = candidate.getBoundingClientRect();
+              const verticalDistance = Math.abs(
+                (labelRect.top + labelRect.height / 2) - (candidateRect.top + candidateRect.height / 2)
+              );
+              if (verticalDistance < 90 && candidateRect.left >= labelRect.left - 20) {
+                score += Math.max(0, 120 - verticalDistance);
+                relevance += 1;
+              }
 
-          if (exportElement) {
-            const activation = activate(exportElement);
-            return {
-              clicked: true,
-              needsLogin: false,
-              url: location.href,
-              score: best.score,
-              text: textOf(exportElement),
-              context: contextOf(exportElement),
-              role: exportElement.getAttribute && exportElement.getAttribute('role') || '',
-              tag: exportElement.tagName.toLowerCase(),
-              hitTag: activation.hitTag,
-              hitText: activation.hitText
-            };
+              let ancestor = label.parentElement;
+              for (let depth = 0; ancestor && ancestor !== document.body && depth < 5; depth += 1) {
+                if (ancestor.contains(candidate)) {
+                  score += 90 - depth * 12;
+                  relevance += 1;
+                }
+                ancestor = ancestor.parentElement;
+              }
+            }
+
+            if (relevance > 0) candidates.push({ candidate, score, text });
           }
 
-          return {
-            clicked: false,
-            needsLogin: !!passwordField || /sign_in|login/i.test(location.href),
-            url: location.href
-          };
+          candidates.sort((lhs, rhs) => {
+            if (rhs.score !== lhs.score) return rhs.score - lhs.score;
+            const lhsRect = lhs.candidate.getBoundingClientRect();
+            const rhsRect = rhs.candidate.getBoundingClientRect();
+            return lhsRect.width * lhsRect.height - rhsRect.width * rhsRect.height;
+          });
+
+          const best = candidates[0];
+          if (!best) return { opened: false, needsLogin: false, url: location.href };
+          activate(best.candidate);
+          return { opened: true, needsLogin: false, text: best.text, score: best.score, url: location.href };
         })();
         """
 
         webView.evaluateJavaScript(script) { [weak self] result, error in
             Task { @MainActor [weak self] in
-                guard let self else { return }
+                guard let self,
+                      self.activeExportTask?.id == taskID,
+                      self.automationState == .locatingRangeTrigger else { return }
 
                 if let error {
-                    self.statusMessage = "导出按钮触发失败：\(error.localizedDescription)"
-                    if self.shouldShowWindowOnFailure {
-                        self.openLoginWindow()
-                    }
-                    self.pendingExportRequest = false
+                    self.finishAutomationFailure("时间筛选器触发失败：\(error.localizedDescription)")
                     return
                 }
 
                 let state = result as? [String: Any]
-                let clicked = state?["clicked"] as? Bool ?? false
+                let opened = state?["opened"] as? Bool ?? false
                 let needsLogin = state?["needsLogin"] as? Bool ?? false
 
-                if clicked {
+                if opened {
                     self.isLoggedIn = true
-                    let text = state?["text"] as? String ?? "导出"
-                    let context = state?["context"] as? String ?? ""
-                    self.statusMessage = context.contains("每月用量")
-                        ? "已点按每月用量的\(text)，等待下载..."
-                        : "已触发\(text)，等待下载..."
-                    self.beginDownloadWatch()
-                    self.scheduleFollowUpExportClick(after: 1.0)
-                    self.pendingExportRequest = false
-                    self.exportLookupRetryCount = 0
-                    self.shouldShowWindowOnFailure = false
+                    self.automationState = .selectingRange
+                    self.statusMessage = "正在选择本月（UTC+0）..."
+                    self.rangeOptionRetryCount = 0
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { [weak self] in
+                        Task { @MainActor [weak self] in
+                            guard self?.activeExportTask?.id == taskID else { return }
+                            self?.attemptCurrentMonthSelection()
+                        }
+                    }
                     return
                 }
 
                 if needsLogin {
                     self.isLoggedIn = false
-                    self.statusMessage = self.shouldShowWindowOnFailure
+                    let showWindow = self.shouldShowWindowOnFailure
+                    self.resetAutomationState()
+                    self.statusMessage = showWindow
                         ? "需要先登录 DeepSeek 平台"
                         : "登录状态已失效，请在设置里手动打开登录页"
-                    self.exportLookupRetryCount = 0
-                    if self.shouldShowWindowOnFailure {
+                    if showWindow {
                         self.openLoginWindow()
                     }
                 } else {
-                    if self.exportLookupRetryCount < 3 {
-                        self.exportLookupRetryCount += 1
-                        self.statusMessage = "页面已打开，正在等待导出按钮..."
+                    if self.rangeTriggerRetryCount < 4 {
+                        self.rangeTriggerRetryCount += 1
+                        self.statusMessage = "页面已打开，正在等待时间筛选器..."
                         DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { [weak self] in
                             Task { @MainActor [weak self] in
+                                guard self?.activeExportTask?.id == taskID else { return }
                                 self?.attemptExportClick()
                             }
                         }
                     } else {
-                        self.statusMessage = "已进入 usage 页面，但暂时没找到导出按钮"
-                        self.exportLookupRetryCount = 0
-                        if self.shouldShowWindowOnFailure {
-                            self.openLoginWindow()
-                        }
+                        self.finishAutomationFailure("已进入 usage 页面，但没有找到时间维度筛选器")
                     }
                 }
 
-                self.pendingExportRequest = false
             }
         }
     }
 
-    private func beginDownloadWatch() {
+    private func attemptCurrentMonthSelection() {
+        guard let webView,
+              automationState == .selectingRange,
+              let taskID = activeExportTask?.id else { return }
+
+        let script = """
+        (() => {
+          const normalize = (value) => (value || '').replace(/\\s+/g, ' ').trim();
+          const compact = (value) => normalize(value).toLowerCase().replace(/\\s+/g, '');
+          const visible = (el) => {
+            if (!el) return false;
+            const rect = el.getBoundingClientRect();
+            const style = window.getComputedStyle(el);
+            return rect.width > 0 && rect.height > 0 && style.visibility !== 'hidden' && style.display !== 'none' && Number(style.opacity || 1) > 0;
+          };
+          const textOf = (el) => normalize(
+            el.innerText ||
+            el.textContent ||
+            el.getAttribute && el.getAttribute('aria-label') ||
+            el.getAttribute && el.getAttribute('title') ||
+            ''
+          );
+          const activate = (el) => {
+            if (!el) return false;
+            try { el.scrollIntoView({ block: 'center', inline: 'center' }); } catch {}
+            const rect = el.getBoundingClientRect();
+            const eventInit = {
+              clientX: rect.left + rect.width / 2,
+              clientY: rect.top + rect.height / 2,
+              bubbles: true,
+              cancelable: true,
+              composed: true,
+              button: 0
+            };
+            if (typeof el.focus === 'function') el.focus();
+            for (const type of ['pointerdown', 'mousedown', 'pointerup', 'mouseup']) {
+              const EventType = type.startsWith('pointer') && typeof PointerEvent !== 'undefined' ? PointerEvent : MouseEvent;
+              el.dispatchEvent(new EventType(type, eventInit));
+            }
+            if (typeof el.click === 'function') el.click();
+            return true;
+          };
+
+          const exactNames = new Set(['本月', 'thismonth']);
+          const nodes = Array.from(document.querySelectorAll('button, [role="button"], [role="option"], [role="menuitem"], li, span, div')).filter(visible);
+          const seen = new Set();
+          const candidates = [];
+
+          for (const node of nodes) {
+            if (!exactNames.has(compact(textOf(node)))) continue;
+            const target = node.closest && node.closest('[role="option"], [role="menuitem"], li, button, [role="button"]');
+            const candidate = target || node;
+            if (seen.has(candidate) || !visible(candidate)) continue;
+            seen.add(candidate);
+
+            let score = 0;
+            const role = (candidate.getAttribute('role') || '').toLowerCase();
+            const tag = (candidate.tagName || '').toLowerCase();
+            if (role === 'option' || role === 'menuitem') score += 240;
+            if (tag === 'li') score += 160;
+            if (tag === 'button' || role === 'button') score += 60;
+            if (candidate.hasAttribute('aria-haspopup')) score -= 180;
+            if (candidate === document.activeElement || candidate.contains(document.activeElement)) score -= 100;
+
+            let ancestor = candidate.parentElement;
+            for (let depth = 0; ancestor && ancestor !== document.body && depth < 5; depth += 1) {
+              const context = compact(textOf(ancestor));
+              if (context.includes('近30天') || context.includes('last30days')) score += 120 - depth * 15;
+              if (context.includes('本月') || context.includes('thismonth')) score += 80 - depth * 10;
+              ancestor = ancestor.parentElement;
+            }
+            candidates.push({ candidate, score });
+          }
+
+          candidates.sort((lhs, rhs) => rhs.score - lhs.score);
+          const best = candidates[0];
+          if (!best) return { selected: false };
+          activate(best.candidate);
+          return { selected: true, score: best.score };
+        })();
+        """
+
+        webView.evaluateJavaScript(script) { [weak self] result, error in
+            Task { @MainActor [weak self] in
+                guard let self,
+                      self.activeExportTask?.id == taskID,
+                      self.automationState == .selectingRange else { return }
+                if let error {
+                    self.finishAutomationFailure("选择本月失败：\(error.localizedDescription)")
+                    return
+                }
+
+                let state = result as? [String: Any]
+                if state?["selected"] as? Bool == true {
+                    self.automationState = .locatingExportButton
+                    self.statusMessage = "已选择本月，等待页面更新..."
+                    self.exportLookupRetryCount = 0
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.9) { [weak self] in
+                        Task { @MainActor [weak self] in
+                            guard self?.activeExportTask?.id == taskID else { return }
+                            self?.attemptFinalExportClick()
+                        }
+                    }
+                    return
+                }
+
+                if self.rangeOptionRetryCount < 4 {
+                    self.rangeOptionRetryCount += 1
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { [weak self] in
+                        Task { @MainActor [weak self] in
+                            guard self?.activeExportTask?.id == taskID else { return }
+                            self?.attemptCurrentMonthSelection()
+                        }
+                    }
+                } else {
+                    self.finishAutomationFailure("时间筛选器已打开，但没有找到“本月”选项")
+                }
+            }
+        }
+    }
+
+    private func attemptFinalExportClick() {
+        guard let webView,
+              automationState == .locatingExportButton,
+              let taskID = activeExportTask?.id else { return }
+
+        let script = """
+        (() => {
+          const normalize = (value) => (value || '').replace(/\\s+/g, ' ').trim();
+          const compact = (value) => normalize(value).toLowerCase().replace(/\\s+/g, '');
+          const semantic = (value) => compact(value).replace(/[^a-z0-9\\u4e00-\\u9fff]/g, '');
+          const visible = (el) => {
+            if (!el) return false;
+            const rect = el.getBoundingClientRect();
+            const style = window.getComputedStyle(el);
+            return rect.width > 0 && rect.height > 0 && style.visibility !== 'hidden' && style.display !== 'none' && Number(style.opacity || 1) > 0;
+          };
+          const textOf = (el) => normalize(
+            el.innerText ||
+            el.textContent ||
+            el.getAttribute && el.getAttribute('aria-label') ||
+            el.getAttribute && el.getAttribute('title') ||
+            ''
+          );
+          const contextOf = (el) => {
+            const parts = [];
+            let current = el;
+            for (let depth = 0; current && current !== document.body && depth < 5; depth += 1) {
+              parts.push(textOf(current));
+              current = current.parentElement;
+            }
+            return normalize(parts.join(' | '));
+          };
+          const activate = (el) => {
+            if (!el) return false;
+            try { el.scrollIntoView({ block: 'center', inline: 'center' }); } catch {}
+            const rect = el.getBoundingClientRect();
+            const eventInit = {
+              clientX: rect.left + rect.width / 2,
+              clientY: rect.top + rect.height / 2,
+              bubbles: true,
+              cancelable: true,
+              composed: true,
+              button: 0
+            };
+            if (typeof el.focus === 'function') el.focus();
+            for (const type of ['pointerdown', 'mousedown', 'pointerup', 'mouseup']) {
+              const EventType = type.startsWith('pointer') && typeof PointerEvent !== 'undefined' ? PointerEvent : MouseEvent;
+              el.dispatchEvent(new EventType(type, eventInit));
+            }
+            if (typeof el.click === 'function') el.click();
+            return true;
+          };
+
+          const rangeConfirmed = Array.from(document.querySelectorAll('button, [role="button"]'))
+            .filter(visible)
+            .some((node) => {
+              const text = semantic(textOf(node));
+              return text.includes('时间维度本月') ||
+                text.includes('时间范围本月') ||
+                text.includes('timerangethismonth') ||
+                text.includes('timedimensionthismonth') ||
+                text.includes('daterangethismonth');
+            });
+          if (!rangeConfirmed) return { clicked: false, rangeConfirmed: false };
+
+          const nodes = Array.from(document.querySelectorAll('button, [role="button"], a')).filter(visible);
+          const seen = new Set();
+          const candidates = [];
+          for (const node of nodes) {
+            const text = textOf(node).toLowerCase();
+            if (text !== '导出' && text !== 'export') continue;
+            const candidate = node.closest && node.closest('button, [role="button"], a') || node;
+            if (seen.has(candidate) || !visible(candidate)) continue;
+            seen.add(candidate);
+
+            const role = (candidate.getAttribute('role') || '').toLowerCase();
+            const tag = (candidate.tagName || '').toLowerCase();
+            const context = contextOf(candidate).toLowerCase();
+            let score = 0;
+            if (tag === 'button') score += 160;
+            if (role === 'button') score += 120;
+            if (context.includes('每月用量') || context.includes('monthly usage')) score += 180;
+            if (context.includes('usage')) score += 40;
+            candidates.push({ candidate, score, context: contextOf(candidate) });
+          }
+
+          candidates.sort((lhs, rhs) => rhs.score - lhs.score);
+          const best = candidates[0];
+          if (!best) return { clicked: false, rangeConfirmed: true };
+          activate(best.candidate);
+          return { clicked: true, rangeConfirmed: true, context: best.context };
+        })();
+        """
+
+        webView.evaluateJavaScript(script) { [weak self] result, error in
+            Task { @MainActor [weak self] in
+                guard let self,
+                      self.activeExportTask?.id == taskID,
+                      self.automationState == .locatingExportButton else { return }
+                if let error {
+                    self.finishAutomationFailure("导出按钮触发失败：\(error.localizedDescription)")
+                    return
+                }
+
+                let state = result as? [String: Any]
+                if state?["clicked"] as? Bool == true {
+                    self.isLoggedIn = true
+                    self.automationState = .waitingForDownload
+                    self.statusMessage = "已按 UTC+0 选择本月，等待用量 ZIP..."
+                    self.pendingExportRequest = false
+                    self.exportLookupRetryCount = 0
+                    self.beginDownloadWatch(for: taskID)
+                    return
+                }
+
+                if state?["rangeConfirmed"] as? Bool == false,
+                   self.exportLookupRetryCount < 3 {
+                    self.exportLookupRetryCount += 1
+                    self.automationState = .locatingRangeTrigger
+                    self.rangeTriggerRetryCount = 0
+                    self.statusMessage = "本月筛选尚未生效，正在重新选择..."
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+                        Task { @MainActor [weak self] in
+                            guard self?.activeExportTask?.id == taskID else { return }
+                            self?.attemptExportClick()
+                        }
+                    }
+                    return
+                }
+
+                if self.exportLookupRetryCount < 3 {
+                    self.exportLookupRetryCount += 1
+                    self.statusMessage = "日期已更新，正在等待导出按钮..."
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) { [weak self] in
+                        Task { @MainActor [weak self] in
+                            guard self?.activeExportTask?.id == taskID else { return }
+                            self?.attemptFinalExportClick()
+                        }
+                    }
+                } else {
+                    self.finishAutomationFailure("已选择本月，但没有找到导出按钮")
+                }
+            }
+        }
+    }
+
+    private func finishAutomationFailure(_ message: String) {
+        let showWindow = shouldShowWindowOnFailure
+        resetAutomationState()
+        statusMessage = message
+        if showWindow {
+            openLoginWindow()
+        }
+    }
+
+    private func resetAutomationState(cancelDownload: Bool = true) {
+        pendingExportRequest = false
+        automationState = .idle
+        rangeTriggerRetryCount = 0
+        rangeOptionRetryCount = 0
+        exportLookupRetryCount = 0
+        activeExportTask = nil
+        exportTriggeredAt = nil
+        downloadWatchAttempts = 0
+        downloadWatchTimer?.invalidate()
+        downloadWatchTimer = nil
+
+        let download = activeDownload
+        let temporaryDestination = activeDownloadDestination
+        activeDownload = nil
+        activeDownloadTaskID = nil
+        activeDownloadDestination = nil
+        activeDownloadFinalDestination = nil
+
+        if cancelDownload, let download {
+            download.delegate = nil
+            download.cancel { _ in }
+        }
+        if let temporaryDestination {
+            try? FileManager.default.removeItem(at: temporaryDestination)
+        }
+    }
+
+    private func beginDownloadWatch(for taskID: UUID) {
+        guard activeExportTask?.id == taskID else { return }
         exportTriggeredAt = Date()
         downloadWatchAttempts = 0
         downloadWatchTimer?.invalidate()
         downloadWatchTimer = Timer.scheduledTimer(withTimeInterval: 1.5, repeats: true) { [weak self] _ in
             Task { @MainActor [weak self] in
-                self?.pollDownloadsForExport()
+                guard self?.activeExportTask?.id == taskID else { return }
+                self?.pollDownloadsForExport(taskID: taskID)
             }
         }
     }
 
-    private func scheduleFollowUpExportClick(after delay: TimeInterval) {
-        DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
-            Task { @MainActor [weak self] in
-                self?.attemptFollowUpExportClick()
-            }
-        }
-    }
-
-    private func attemptFollowUpExportClick() {
-        guard let webView else { return }
-
-        let script = """
-        (() => {
-          const normalized = (value) => (value || '').replace(/\\s+/g, ' ').trim();
-
-          const visible = (el) => {
-            const rect = el.getBoundingClientRect();
-            const style = window.getComputedStyle(el);
-            return rect.width > 0 && rect.height > 0 && style.visibility !== 'hidden' && style.display !== 'none';
-          };
-          const textOf = (el) => normalized([
-            el.innerText,
-            el.textContent,
-            el.getAttribute && el.getAttribute('aria-label'),
-            el.getAttribute && el.getAttribute('title')
-          ].filter(Boolean).join(' '));
-          const contextOf = (el) => {
-            const parts = [];
-            let current = el;
-            for (let i = 0; current && i < 5; i += 1) {
-              const text = textOf(current);
-              if (text) {
-                parts.push(text);
-              }
-              current = current.parentElement;
-            }
-            return normalized(parts.join(' | '));
-          };
-
-          const activate = (el) => {
-            if (!el) return false;
-            try { el.scrollIntoView({ block: 'center', inline: 'center' }); } catch {}
-            const rect = el.getBoundingClientRect();
-            const point = {
-              clientX: Math.max(1, Math.min(window.innerWidth - 1, rect.left + rect.width / 2)),
-              clientY: Math.max(1, Math.min(window.innerHeight - 1, rect.top + rect.height / 2)),
-              bubbles: true,
-              cancelable: true,
-              composed: true,
-              button: 0,
-              buttons: 1
-            };
-
-            if (typeof el.focus === 'function') {
-              el.focus();
-            }
-
-            const eventTypes = ['pointerover', 'mouseover', 'pointerenter', 'mouseenter', 'pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click'];
-            for (const type of eventTypes) {
-              const EventCtor = type.startsWith('pointer') && typeof PointerEvent !== 'undefined' ? PointerEvent : MouseEvent;
-              el.dispatchEvent(new EventCtor(type, point));
-            }
-
-            if (typeof el.click === 'function') {
-              el.click();
-            }
-
-            return true;
-          };
-
-          const nodes = Array.from(document.querySelectorAll('button, a, [role="button"], li, span, div')).filter(visible);
-          const exactExport = nodes.find((el) => {
-            const text = textOf(el);
-            const role = (el.getAttribute && el.getAttribute('role') || '').toLowerCase();
-            const context = contextOf(el);
-            return role === 'button' && text === '导出' && context.includes('每月用量');
-          });
-
-          if (exactExport) {
-            activate(exactExport);
-            return { clicked: true, keyword: '导出' };
-          }
-
-          const priorities = ['下载', '确认', 'zip', 'csv', 'amount', '导出'];
-
-          for (const keyword of priorities) {
-            const target = nodes.find((el) => textOf(el).toLowerCase().includes(keyword.toLowerCase()));
-            if (target) {
-              activate(target);
-              return { clicked: true, keyword };
-            }
-          }
-
-          return { clicked: false };
-        })();
-        """
-
-        webView.evaluateJavaScript(script, completionHandler: nil)
-    }
-
-    private func pollDownloadsForExport() {
+    private func pollDownloadsForExport(taskID: UUID) {
+        guard activeExportTask?.id == taskID else { return }
         downloadWatchAttempts += 1
 
         if let downloaded = newestDownloadedUsageFile() {
             lastDownloadFileName = downloaded.lastPathComponent
             statusMessage = "已发现下载文件 \(downloaded.lastPathComponent)，等待自动导入..."
-            downloadWatchTimer?.invalidate()
-            downloadWatchTimer = nil
-            NotificationCenter.default.post(name: .usageExportDownloadFinished, object: nil)
+            shouldShowWindowOnFailure = false
+            publishDownloadedFile(downloaded)
             return
         }
 
-        if downloadWatchAttempts == 2 || downloadWatchAttempts == 5 {
-            scheduleFollowUpExportClick(after: 0.2)
-        }
-
         if downloadWatchAttempts >= 14 {
-            downloadWatchTimer?.invalidate()
-            downloadWatchTimer = nil
-            statusMessage = shouldShowWindowOnFailure
-                ? "等待下载超时，可能还需要网页里的二次确认"
+            let showWindow = shouldShowWindowOnFailure
+            let message = showWindow
+                ? "等待本月用量 ZIP 超时，请检查网页登录状态"
                 : "后台导出超时，本次已跳过，不会打断你当前操作"
-            if shouldShowWindowOnFailure {
+            resetAutomationState()
+            statusMessage = message
+            if showWindow {
                 openLoginWindow()
             }
         }
+    }
+
+    private func publishDownloadedFile(_ fileURL: URL, cancelActiveDownload: Bool = true) {
+        guard let task = activeExportTask else { return }
+        resetAutomationState(cancelDownload: cancelActiveDownload)
+        NotificationCenter.default.post(
+            name: .usageExportDownloadFinished,
+            object: UsageExportDownloadEvent(
+                taskID: task.id,
+                fileURL: fileURL,
+                expectedRange: task.expectedRange
+            )
+        )
     }
 
     private func newestDownloadedUsageFile() -> URL? {
@@ -574,7 +821,7 @@ final class UsageExportAutomationService: NSObject, ObservableObject {
         for case let fileURL as URL in enumerator {
             let modifiedAt = (try? fileURL.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast
             guard modifiedAt >= exportTriggeredAt.addingTimeInterval(-2) else { continue }
-            guard detectDownloadedFileKind(at: fileURL) != .unknown else { continue }
+            guard detectDownloadedFileKind(at: fileURL) == .zip else { continue }
             candidates.append((fileURL, modifiedAt))
         }
 
@@ -588,17 +835,13 @@ final class UsageExportAutomationService: NSObject, ObservableObject {
     }
 
     private func detectDownloadedFileKind(at url: URL) -> DetectedDownloadFileKind {
-        let ext = url.pathExtension.lowercased()
-        if ext == "zip" { return .zip }
-        if ext == "csv" { return .csv }
-
         guard let handle = try? FileHandle(forReadingFrom: url) else {
             return .unknown
         }
         defer { try? handle.close() }
 
-        let sample = (try? handle.read(upToCount: 256)) ?? Data()
-        if sample.starts(with: [0x50, 0x4B, 0x03, 0x04]) {
+        let sample = (try? handle.read(upToCount: 512)) ?? Data()
+        if Self.isZIPArchiveData(sample) {
             return .zip
         }
 
@@ -691,20 +934,22 @@ final class UsageExportAutomationService: NSObject, ObservableObject {
             return best;
           };
 
-          const postDataUrl = (filename, dataUrl) => {
+          const postDataUrl = (filename, dataUrl, taskID) => {
             window.webkit.messageHandlers.\(UsageExportScriptMessage.download).postMessage({
               filename: guessedFileName(filename, 'usage-export.zip'),
-              dataUrl
+              dataUrl,
+              taskID: taskID || ''
             });
           };
 
-          const postBlob = async (blob, filename) => {
+          const postBlob = async (blob, filename, taskID) => {
             if (!blob) return false;
+            const capturedTaskID = taskID || window.__deepseekActiveExportTaskID || '';
             return await new Promise((resolve) => {
               try {
                 const reader = new FileReader();
                 reader.onloadend = () => {
-                  postDataUrl(filename, reader.result);
+                  postDataUrl(filename, reader.result, capturedTaskID);
                   resolve(true);
                 };
                 reader.onerror = () => resolve(false);
@@ -717,34 +962,37 @@ final class UsageExportAutomationService: NSObject, ObservableObject {
           };
 
           const shouldCapture = (url, contentType, disposition) => {
-            const haystack = [url, contentType, disposition].filter(Boolean).join(' ').toLowerCase();
-            return haystack.includes('zip') ||
-              haystack.includes('csv') ||
-              haystack.includes('octet-stream') ||
-              haystack.includes('download') ||
-              haystack.includes('export') ||
-              haystack.includes('usage');
+            const type = (contentType || '').toLowerCase();
+            const attachment = (disposition || '').toLowerCase();
+            let isUsageExportEndpoint = false;
+            try {
+              isUsageExportEndpoint = new URL(url || '', location.href).pathname === '/api/v0/usage/export';
+            } catch {}
+            const isZipResponse = type.includes('application/zip') || type.includes('application/x-zip');
+            const isZipAttachment = attachment.includes('attachment') && attachment.includes('.zip');
+            return isUsageExportEndpoint || isZipResponse || isZipAttachment;
           };
 
           const blobStore = new Map();
 
           const postDownload = async (href, filename) => {
             if (!href) return false;
+            const taskID = window.__deepseekActiveExportTaskID || '';
 
             try {
               if (href.startsWith('blob:')) {
                 const storedBlob = blobStore.get(href);
                 if (storedBlob) {
-                  return await postBlob(storedBlob, filename);
+                  return await postBlob(storedBlob, filename, taskID);
                 }
 
                 const response = await fetch(href);
                 const blob = await response.blob();
-                return await postBlob(blob, filename);
+                return await postBlob(blob, filename, taskID);
               }
 
               if (href.startsWith('data:')) {
-                postDataUrl(filename, href);
+                postDataUrl(filename, href, taskID);
                 return true;
               }
             } catch (error) {
@@ -832,6 +1080,7 @@ final class UsageExportAutomationService: NSObject, ObservableObject {
 
           const originalFetch = window.fetch.bind(window);
           window.fetch = async function() {
+            const taskID = window.__deepseekActiveExportTaskID || '';
             const response = await originalFetch.apply(window, arguments);
             try {
               const requestUrl = typeof arguments[0] === 'string' ? arguments[0] : (arguments[0] && arguments[0].url) || '';
@@ -841,7 +1090,7 @@ final class UsageExportAutomationService: NSObject, ObservableObject {
                 const blob = await response.clone().blob();
                 const matchedName = /filename\\*=UTF-8''([^;]+)|filename="?([^"]+)"?/i.exec(disposition || '');
                 const fileName = decodeURIComponent((matchedName && (matchedName[1] || matchedName[2])) || '');
-                postBlob(blob, guessedFileName(fileName, requestUrl.split('/').pop() || 'usage-export.zip'));
+                postBlob(blob, guessedFileName(fileName, requestUrl.split('/').pop() || 'usage-export.zip'), taskID);
               }
             } catch (error) {
               console.error('deepseek fetch bridge failed', error);
@@ -858,6 +1107,7 @@ final class UsageExportAutomationService: NSObject, ObservableObject {
           };
 
           XMLHttpRequest.prototype.send = function() {
+            const taskID = window.__deepseekActiveExportTaskID || '';
             this.addEventListener('load', function() {
               try {
                 const url = this.responseURL || this.__deepseekUrl || '';
@@ -866,19 +1116,19 @@ final class UsageExportAutomationService: NSObject, ObservableObject {
                 if (!shouldCapture(url, contentType, disposition)) return;
 
                 if (this.response instanceof Blob) {
-                  postBlob(this.response, url.split('/').pop() || 'usage-export.zip');
+                  postBlob(this.response, url.split('/').pop() || 'usage-export.zip', taskID);
                   return;
                 }
 
                 if (this.response instanceof ArrayBuffer) {
                   const blob = new Blob([this.response], { type: contentType || 'application/octet-stream' });
-                  postBlob(blob, url.split('/').pop() || 'usage-export.zip');
+                  postBlob(blob, url.split('/').pop() || 'usage-export.zip', taskID);
                   return;
                 }
 
-                if (typeof this.responseText === 'string' && (contentType.includes('csv') || url.toLowerCase().includes('csv'))) {
-                  const dataUrl = 'data:text/csv;charset=utf-8,' + encodeURIComponent(this.responseText);
-                  postDataUrl(url.split('/').pop() || 'usage-export.csv', dataUrl);
+                if (typeof this.responseText === 'string') {
+                  const blob = new Blob([this.responseText], { type: contentType || 'application/json' });
+                  postBlob(blob, url.split('/').pop() || 'usage-export.zip', taskID);
                 }
               } catch (error) {
                 console.error('deepseek xhr bridge failed', error);
@@ -891,9 +1141,11 @@ final class UsageExportAutomationService: NSObject, ObservableObject {
         """
     }
 
-    private func saveBridgedDownload(filename: String, dataURL: String) {
+    private func saveBridgedDownload(filename: String, dataURL: String, taskID: String) {
+        guard automationState == .waitingForDownload,
+              activeExportTask?.id.uuidString == taskID else { return }
         guard let commaIndex = dataURL.firstIndex(of: ",") else {
-            statusMessage = "导出内容解析失败：数据格式无效"
+            finishAutomationFailure("导出内容解析失败：数据格式无效")
             return
         }
 
@@ -907,13 +1159,25 @@ final class UsageExportAutomationService: NSObject, ObservableObject {
             data = payload.removingPercentEncoding?.data(using: .utf8)
         }
 
-        guard let data,
-              let incomingFolder = try? UsageAutoImportService.incomingFolderURL() else {
-            statusMessage = "导出内容保存失败"
+        guard let data else {
+            finishAutomationFailure("导出内容保存失败")
             return
         }
 
-        let finalName = normalizedDownloadFileName(from: filename, data: data, meta: meta)
+        guard Self.isZIPArchiveData(data) else {
+            let reason = exportFailureMessage(from: data) ?? "服务器返回的内容不是有效 ZIP"
+            resetAutomationState()
+            statusMessage = "DeepSeek 导出失败：\(reason)"
+            lastDownloadFileName = nil
+            return
+        }
+
+        guard let incomingFolder = try? UsageAutoImportService.incomingFolderURL() else {
+            finishAutomationFailure("导出内容保存失败：无法打开专用导入目录")
+            return
+        }
+
+        let finalName = normalizedDownloadFileName(from: filename)
         let destination = incomingFolder.appendingPathComponent(finalName)
 
         do {
@@ -921,41 +1185,51 @@ final class UsageExportAutomationService: NSObject, ObservableObject {
             try data.write(to: destination, options: .atomic)
             lastDownloadFileName = finalName
             statusMessage = "已保存下载文件 \(finalName)，等待自动导入..."
-            downloadWatchTimer?.invalidate()
-            downloadWatchTimer = nil
-            NotificationCenter.default.post(name: .usageExportDownloadFinished, object: nil)
+            shouldShowWindowOnFailure = false
+            publishDownloadedFile(destination)
         } catch {
-            statusMessage = "保存下载文件失败：\(error.localizedDescription)"
+            finishAutomationFailure("保存下载文件失败：\(error.localizedDescription)")
         }
     }
 
-    private func normalizedDownloadFileName(from filename: String, data: Data, meta: String) -> String {
+    private func normalizedDownloadFileName(from filename: String) -> String {
         let raw = filename.trimmingCharacters(in: .whitespacesAndNewlines)
         let noQuery = raw.split(separator: "?").first.map(String.init) ?? raw
-        let safeBase = noQuery
+        let lastComponent = URL(fileURLWithPath: noQuery).lastPathComponent
+        let safeBase = lastComponent
             .replacingOccurrences(of: "/", with: "-")
             .replacingOccurrences(of: ":", with: "-")
             .replacingOccurrences(of: "&", with: "-")
-
-        let inferredExtension: String
-        if data.starts(with: [0x50, 0x4B, 0x03, 0x04]) || meta.contains("application/zip") || meta.contains("octet-stream") {
-            inferredExtension = "zip"
-        } else if meta.contains("text/csv") {
-            inferredExtension = "csv"
-        } else {
-            inferredExtension = ""
-        }
-
         let fallbackBase = safeBase.isEmpty ? "usage-export" : safeBase
-        if inferredExtension.isEmpty {
+        if fallbackBase.lowercased().hasSuffix(".zip") {
             return fallbackBase
         }
 
-        if fallbackBase.lowercased().hasSuffix(".\(inferredExtension)") {
-            return fallbackBase
-        }
+        return "\(fallbackBase).zip"
+    }
 
-        return "\(fallbackBase).\(inferredExtension)"
+    nonisolated static func isZIPArchiveData(_ data: Data) -> Bool {
+        let signatures: [[UInt8]] = [
+            [0x50, 0x4B, 0x03, 0x04],
+            [0x50, 0x4B, 0x05, 0x06],
+            [0x50, 0x4B, 0x07, 0x08],
+        ]
+        return signatures.contains { data.starts(with: $0) }
+    }
+
+    private func exportFailureMessage(from data: Data) -> String? {
+        guard let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            return nil
+        }
+        if let nested = object["data"] as? [String: Any],
+           let message = nested["biz_msg"] as? String,
+           message.isEmpty == false {
+            return message
+        }
+        if let message = object["msg"] as? String, message.isEmpty == false {
+            return message
+        }
+        return nil
     }
 }
 
@@ -972,6 +1246,7 @@ extension UsageExportAutomationService: WKNavigationDelegate, WKUIDelegate, WKDo
 
         if webView.url?.absoluteString.contains("sign_in") == true {
             isLoggedIn = false
+            resetAutomationState()
             statusMessage = shouldShowWindowOnFailure
                 ? "请在打开的窗口中完成登录"
                 : "检测到需要重新登录，自动导出暂停等待手动登录"
@@ -987,44 +1262,140 @@ extension UsageExportAutomationService: WKNavigationDelegate, WKUIDelegate, WKDo
         configure(download: download)
     }
 
+    func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
+        handleNavigationFailure(error)
+    }
+
+    func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
+        handleNavigationFailure(error)
+    }
+
+    func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
+        guard activeExportTask != nil else { return }
+        finishAutomationFailure("后台页面进程已终止，本次同步已停止")
+    }
+
+    private func handleNavigationFailure(_ error: Error) {
+        guard activeExportTask != nil else { return }
+        let nsError = error as NSError
+        if nsError.domain == NSURLErrorDomain, nsError.code == NSURLErrorCancelled {
+            return
+        }
+        finishAutomationFailure("后台页面加载失败：\(error.localizedDescription)")
+    }
+
     func download(
         _ download: WKDownload,
         decideDestinationUsing response: URLResponse,
         suggestedFilename: String,
         completionHandler: @escaping @MainActor @Sendable (URL?) -> Void
     ) {
-        let incomingFolder = try? UsageAutoImportService.incomingFolderURL()
-        let destination = incomingFolder?.appendingPathComponent(suggestedFilename)
-        if let destination {
-            try? FileManager.default.removeItem(at: destination)
-            lastDownloadFileName = suggestedFilename
-            statusMessage = "正在下载 \(suggestedFilename)..."
+        guard download === activeDownload,
+              let taskID = activeDownloadTaskID,
+              activeExportTask?.id == taskID,
+              automationState == .waitingForDownload else {
+            completionHandler(nil)
+            return
         }
-        completionHandler(destination)
+        let incomingFolder = try? UsageAutoImportService.incomingFolderURL()
+        let safeName = normalizedDownloadFileName(from: suggestedFilename)
+        let finalDestination = incomingFolder?.appendingPathComponent(safeName)
+        let temporaryDestination = FileManager.default.temporaryDirectory
+            .appendingPathComponent("DeepSeekMonitor-\(UUID().uuidString).download")
+        activeDownloadDestination = temporaryDestination
+        activeDownloadFinalDestination = finalDestination
+        if finalDestination != nil {
+            try? FileManager.default.removeItem(at: temporaryDestination)
+            lastDownloadFileName = safeName
+            statusMessage = "正在下载 \(safeName)..."
+        }
+        completionHandler(finalDestination == nil ? nil : temporaryDestination)
     }
 
     func downloadDidFinish(_ download: WKDownload) {
+        guard download === activeDownload else { return }
+        defer {
+            activeDownload = nil
+            activeDownloadTaskID = nil
+            activeDownloadDestination = nil
+            activeDownloadFinalDestination = nil
+        }
+        guard let taskID = activeDownloadTaskID,
+              activeExportTask?.id == taskID else {
+            if let temporaryDestination = activeDownloadDestination {
+                try? FileManager.default.removeItem(at: temporaryDestination)
+            }
+            return
+        }
+        guard let temporaryDestination = activeDownloadDestination,
+              let finalDestination = activeDownloadFinalDestination,
+              let data = try? Data(contentsOf: temporaryDestination),
+              Self.isZIPArchiveData(data) else {
+            let temporaryDestination = activeDownloadDestination
+            let reason: String
+            if let temporaryDestination = activeDownloadDestination {
+                let data = try? Data(contentsOf: temporaryDestination)
+                reason = data.flatMap(exportFailureMessage(from:)) ?? "服务器返回的内容不是有效 ZIP"
+            } else {
+                reason = "未找到下载文件"
+            }
+            resetAutomationState(cancelDownload: false)
+            if let temporaryDestination {
+                try? FileManager.default.removeItem(at: temporaryDestination)
+            }
+            statusMessage = "DeepSeek 导出失败：\(reason)"
+            lastDownloadFileName = nil
+            return
+        }
+
+        do {
+            try? FileManager.default.removeItem(at: finalDestination)
+            try FileManager.default.moveItem(at: temporaryDestination, to: finalDestination)
+        } catch {
+            resetAutomationState(cancelDownload: false)
+            statusMessage = "保存下载文件失败：\(error.localizedDescription)"
+            return
+        }
+
         statusMessage = "导出下载完成，等待自动导入..."
-        downloadWatchTimer?.invalidate()
-        downloadWatchTimer = nil
-        NotificationCenter.default.post(name: .usageExportDownloadFinished, object: nil)
+        shouldShowWindowOnFailure = false
+        publishDownloadedFile(finalDestination, cancelActiveDownload: false)
     }
 
     func download(_ download: WKDownload, didFailWithError error: Error, resumeData: Data?) {
+        guard download === activeDownload else { return }
+        resetAutomationState(cancelDownload: false)
         statusMessage = "下载失败：\(error.localizedDescription)"
     }
 
     private func configure(download: WKDownload) {
+        guard automationState == .waitingForDownload,
+              let taskID = activeExportTask?.id else {
+            download.cancel { _ in }
+            return
+        }
+        if download === activeDownload {
+            download.delegate = self
+            return
+        }
+        guard activeDownload == nil else {
+            download.cancel { _ in }
+            return
+        }
         activeDownload = download
+        activeDownloadTaskID = taskID
+        activeDownloadDestination = nil
+        activeDownloadFinalDestination = nil
         download.delegate = self
     }
 
     func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
         if message.name == UsageExportScriptMessage.download,
            let body = message.body as? [String: Any],
-           let dataURL = body["dataUrl"] as? String {
+           let dataURL = body["dataUrl"] as? String,
+           let taskID = body["taskID"] as? String {
             let filename = (body["filename"] as? String) ?? "usage-export.zip"
-            saveBridgedDownload(filename: filename, dataURL: dataURL)
+            saveBridgedDownload(filename: filename, dataURL: dataURL, taskID: taskID)
             return
         }
 

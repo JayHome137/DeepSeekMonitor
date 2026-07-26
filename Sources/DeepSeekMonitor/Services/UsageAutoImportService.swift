@@ -13,6 +13,17 @@ enum UsageAutoImportService {
         let fingerprint: String
         let sourceName: String
         let selectedCSVNames: [String]
+        let exportDateRange: ExportDateRange?
+        let isArchive: Bool
+    }
+
+    struct ExportDateRange: Equatable {
+        let startDate: String
+        let endDateExclusive: String
+
+        func contains(_ date: String) -> Bool {
+            startDate <= date && date < endDateExclusive
+        }
     }
 
     static func autoImportRootFolderURL() throws -> URL {
@@ -69,16 +80,98 @@ enum UsageAutoImportService {
     }
 
     private static func makeImportCandidate(from sourceURL: URL, fingerprint: String) throws -> ImportCandidate {
+        let sourceKind = detectFileKind(at: sourceURL)
+        guard sourceKind != .unknown else {
+            throw UsageCSVImportError.invalidExportArchive("文件不是有效的 ZIP 或 CSV")
+        }
+
         let workspaceFolder = try autoImportFolderURL()
         let prepared = try prepareManagedCSV(from: sourceURL, workspaceFolder: workspaceFolder)
+        let dateRange = try exportDateRange(from: prepared.selectedNames)
+        if sourceKind == .zip, dateRange == nil {
+            throw UsageCSVImportError.invalidExportArchive("amount/cost 文件名缺少官方日期范围")
+        }
+
         return ImportCandidate(
             sourceURL: sourceURL,
             preparedAmountCSVURL: prepared.amountURL,
             preparedCostCSVURL: prepared.costURL,
             fingerprint: fingerprint,
             sourceName: sourceURL.lastPathComponent,
-            selectedCSVNames: prepared.selectedNames
+            selectedCSVNames: prepared.selectedNames,
+            exportDateRange: dateRange,
+            isArchive: sourceKind == .zip
         )
+    }
+
+    static func expectedRecentExportRange(referenceDate: Date = Date()) -> ExportDateRange {
+        let calendar = UsageTime.calendar
+        let today = calendar.startOfDay(for: referenceDate)
+        let start = calendar.date(byAdding: .day, value: -6, to: today) ?? today
+        let end = calendar.date(byAdding: .day, value: 1, to: today) ?? today
+        let formatter = UsageTime.formatter("yyyy-MM-dd")
+        return ExportDateRange(
+            startDate: formatter.string(from: start),
+            endDateExclusive: formatter.string(from: end)
+        )
+    }
+
+    static func expectedCurrentMonthExportRange(referenceDate: Date = Date()) -> ExportDateRange {
+        let calendar = UsageTime.calendar
+        let today = calendar.startOfDay(for: referenceDate)
+        let monthStart = calendar.dateInterval(of: .month, for: today)?.start ?? today
+        let end = calendar.date(byAdding: .day, value: 1, to: today) ?? today
+        let formatter = UsageTime.formatter("yyyy-MM-dd")
+        return ExportDateRange(
+            startDate: formatter.string(from: monthStart),
+            endDateExclusive: formatter.string(from: end)
+        )
+    }
+
+    static func validateAutomaticExport(
+        _ candidate: ImportCandidate,
+        expectedRange: ExportDateRange
+    ) throws {
+        guard candidate.isArchive else {
+            throw UsageCSVImportError.invalidExportArchive("自动网页导出必须返回官方 ZIP")
+        }
+        guard let actualRange = candidate.exportDateRange else {
+            throw UsageCSVImportError.invalidExportArchive("无法确认导出日期范围")
+        }
+
+        guard actualRange == expectedRange else {
+            throw UsageCSVImportError.staleExportRange(
+                actualStartDate: actualRange.startDate,
+                actualEndDateExclusive: actualRange.endDateExclusive,
+                expectedStartDate: expectedRange.startDate,
+                expectedEndDateExclusive: expectedRange.endDateExclusive
+            )
+        }
+    }
+
+    static func validateRecords(
+        _ records: [UsageRecord],
+        within range: ExportDateRange?
+    ) throws {
+        guard let range else { return }
+        guard records.allSatisfy({ range.contains($0.date) }) else {
+            throw UsageCSVImportError.recordsOutsideExportRange(
+                startDate: range.startDate,
+                endDateExclusive: range.endDateExclusive
+            )
+        }
+    }
+
+    static func exportDateRange(from fileNames: [String]) throws -> ExportDateRange? {
+        let ranges = fileNames.compactMap(parseExportDateRange)
+        guard let first = ranges.first else { return nil }
+        guard ranges.count == fileNames.count else {
+            throw UsageCSVImportError.invalidExportArchive("部分 CSV 文件名缺少官方日期范围")
+        }
+        guard ranges.allSatisfy({ $0 == first }) else {
+            throw UsageCSVImportError.invalidExportArchive("amount 与 cost 的日期范围不一致")
+        }
+        return first
     }
 
     static func markImported(_ fingerprint: String) {
@@ -132,6 +225,9 @@ enum UsageAutoImportService {
         try clearManagedFolder(at: workspaceFolder)
 
         let kind = detectFileKind(at: source)
+        guard kind != .unknown else {
+            throw UsageCSVImportError.invalidExportArchive("文件不是有效的 ZIP 或 CSV")
+        }
         if kind == .zip {
             let copiedZip = workspaceFolder.appendingPathComponent(source.lastPathComponent)
             try FileManager.default.copyItem(at: source, to: copiedZip)
@@ -144,29 +240,36 @@ enum UsageAutoImportService {
                 $0.pathExtension.lowercased() == "csv"
             }
 
-            guard let amountCSV = preferredCSV(from: csvFiles) else {
-                throw UsageCSVImportError.noValidRows
+            let amountCSVs = csvFiles.filter {
+                $0.lastPathComponent.lowercased().contains("amount")
             }
-            let costCSV = csvFiles.first { $0.lastPathComponent.lowercased().contains("cost") }
+            let costCSVs = csvFiles.filter {
+                $0.lastPathComponent.lowercased().contains("cost")
+            }
+            guard amountCSVs.count == 1, let amountCSV = amountCSVs.first else {
+                throw UsageCSVImportError.invalidExportArchive("amount CSV 数量不正确")
+            }
+            guard costCSVs.count == 1, let costCSV = costCSVs.first else {
+                throw UsageCSVImportError.invalidExportArchive("cost CSV 数量不正确")
+            }
+
+            let selectedNames = [amountCSV.lastPathComponent, costCSV.lastPathComponent]
+            guard try exportDateRange(from: selectedNames) != nil else {
+                throw UsageCSVImportError.invalidExportArchive("amount/cost 文件名缺少官方日期范围")
+            }
 
             let amountDestination = workspaceFolder.appendingPathComponent("amount.csv")
             try FileManager.default.copyItem(at: amountCSV, to: amountDestination)
 
-            let costDestination: URL?
-            if let costCSV {
-                let destination = workspaceFolder.appendingPathComponent("cost.csv")
-                try FileManager.default.copyItem(at: costCSV, to: destination)
-                costDestination = destination
-            } else {
-                costDestination = nil
-            }
+            let costDestination = workspaceFolder.appendingPathComponent("cost.csv")
+            try FileManager.default.copyItem(at: costCSV, to: costDestination)
 
-            let keptFiles = [amountDestination, costDestination].compactMap { $0 }
+            let keptFiles = [amountDestination, costDestination]
             try clearManagedFolderKeeping(keptFiles, in: workspaceFolder)
             return (
                 amountDestination,
                 costDestination,
-                [amountCSV.lastPathComponent, costCSV?.lastPathComponent].compactMap { $0 }
+                selectedNames
             )
         }
 
@@ -197,12 +300,22 @@ enum UsageAutoImportService {
         }
     }
 
-    private static func preferredCSV(from files: [URL]) -> URL? {
-        let sorted = files.sorted {
-            (modificationDate(for: $0) ?? .distantPast) > (modificationDate(for: $1) ?? .distantPast)
+    private static func parseExportDateRange(from fileName: String) -> ExportDateRange? {
+        let name = URL(fileURLWithPath: fileName).lastPathComponent
+        let pattern = #"(?:amount|cost)-(\d{4}-\d{2}-\d{2})_(\d{4}-\d{2}-\d{2})\.csv$"#
+        guard let expression = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]),
+              let match = expression.firstMatch(
+                in: name,
+                range: NSRange(name.startIndex..<name.endIndex, in: name)
+              ),
+              let startRange = Range(match.range(at: 1), in: name),
+              let endRange = Range(match.range(at: 2), in: name) else {
+            return nil
         }
-
-        return sorted.first { $0.lastPathComponent.lowercased().contains("amount") } ?? sorted.first
+        return ExportDateRange(
+            startDate: String(name[startRange]),
+            endDateExclusive: String(name[endRange])
+        )
     }
 
     private static func clearManagedFolder(at url: URL) throws {
@@ -251,17 +364,13 @@ enum UsageAutoImportService {
     }
 
     private static func detectFileKind(at url: URL) -> DetectedFileKind {
-        let ext = url.pathExtension.lowercased()
-        if ext == "zip" { return .zip }
-        if ext == "csv" { return .csv }
-
         guard let handle = try? FileHandle(forReadingFrom: url) else {
             return .unknown
         }
         defer { try? handle.close() }
 
-        let sample = (try? handle.read(upToCount: 256)) ?? Data()
-        if sample.starts(with: [0x50, 0x4B, 0x03, 0x04]) {
+        let sample = (try? handle.read(upToCount: 512)) ?? Data()
+        if isZIPArchive(sample) {
             return .zip
         }
 
@@ -271,5 +380,14 @@ enum UsageAutoImportService {
         }
 
         return .unknown
+    }
+
+    private static func isZIPArchive(_ data: Data) -> Bool {
+        let signatures: [[UInt8]] = [
+            [0x50, 0x4B, 0x03, 0x04],
+            [0x50, 0x4B, 0x05, 0x06],
+            [0x50, 0x4B, 0x07, 0x08],
+        ]
+        return signatures.contains { data.starts(with: $0) }
     }
 }

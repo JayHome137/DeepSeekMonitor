@@ -12,16 +12,24 @@ final class LocalCache {
 
     static let shared = LocalCache()
 
-    private let defaults = UserDefaults.standard
+    private let defaults: UserDefaults
     private let encoder = JSONEncoder()
     private let decoder = JSONDecoder()
+
+    init(defaults: UserDefaults = .standard) {
+        self.defaults = defaults
+    }
 
     private enum Keys {
         static let dashboard = "cached_dashboard"
         static let usageHistory = "cached_usage_history"
+        static let usageHistorySchemaVersion = "cached_usage_history_schema_version"
+        static let usageBaselineMonth = "cached_usage_baseline_month"
         static let nativeWidgetEnabled = "native_widget_enabled"
         static let widgetSnapshot = "widget_snapshot"
     }
+
+    private static let currentUsageHistorySchemaVersion = 2
 
     private var sharedDefaults: UserDefaults? {
         UserDefaults(suiteName: "N5YV5FV235.group.com.deepseek.monitor")
@@ -49,11 +57,95 @@ final class LocalCache {
         defaults.data(forKey: Keys.dashboard) != nil
     }
 
-    // MARK: - Usage History (最近 30 天明细)
+    // MARK: - Usage History (本月明细 + 最近 7 天)
 
     func saveUsageRecords(_ records: [UsageRecord]) {
         guard let data = try? encoder.encode(records) else { return }
         defaults.set(data, forKey: Keys.usageHistory)
+    }
+
+    @discardableResult
+    func mergeUsageRecords(
+        _ records: [UsageRecord],
+        replacing range: UsageAutoImportService.ExportDateRange? = nil,
+        referenceDate: Date = Date()
+    ) -> [UsageRecord] {
+        let completesCurrentMonthBaseline = range.map {
+            Self.rangeCoversCurrentMonth($0, referenceDate: referenceDate)
+        } ?? false
+        let shouldDiscardLegacyHistory = needsUsagePrecisionMigration && completesCurrentMonthBaseline
+        let merged = Self.mergedUsageRecords(
+            existing: shouldDiscardLegacyHistory ? [] : loadUsageRecords(),
+            incoming: records,
+            replacing: range,
+            referenceDate: referenceDate
+        )
+        saveUsageRecords(merged)
+        if completesCurrentMonthBaseline {
+            markCurrentMonthBaseline(referenceDate: referenceDate)
+        }
+        return merged
+    }
+
+    static func mergedUsageRecords(
+        existing: [UsageRecord],
+        incoming: [UsageRecord],
+        replacing range: UsageAutoImportService.ExportDateRange?,
+        referenceDate: Date
+    ) -> [UsageRecord] {
+        let retainedExisting: [UsageRecord]
+        if let range {
+            retainedExisting = existing.filter { range.contains($0.date) == false }
+        } else {
+            let incomingKeys = Set(incoming.map(recordKey))
+            retainedExisting = existing.filter { incomingKeys.contains(recordKey($0)) == false }
+        }
+
+        let calendar = UsageTime.calendar
+        let today = calendar.startOfDay(for: referenceDate)
+        let recentStart = calendar.date(byAdding: .day, value: -6, to: today) ?? today
+        let monthStart = calendar.dateInterval(of: .month, for: today)?.start ?? today
+        let retentionStart = min(recentStart, monthStart)
+        let retentionStartText = UsageTime.formatter("yyyy-MM-dd").string(from: retentionStart)
+
+        var byKey: [String: UsageRecord] = [:]
+        for record in retainedExisting + incoming where record.date >= retentionStartText {
+            byKey[recordKey(record)] = record
+        }
+
+        return byKey.values.sorted {
+            if $0.date == $1.date {
+                return $0.modelName < $1.modelName
+            }
+            return $0.date < $1.date
+        }
+    }
+
+    private static func recordKey(_ record: UsageRecord) -> String {
+        "\(record.date)|\(record.modelName.lowercased())"
+    }
+
+    static func rangeCoversCurrentMonth(
+        _ range: UsageAutoImportService.ExportDateRange,
+        referenceDate: Date
+    ) -> Bool {
+        let expected = UsageAutoImportService.expectedCurrentMonthExportRange(referenceDate: referenceDate)
+        return range.startDate <= expected.startDate && range.endDateExclusive >= expected.endDateExclusive
+    }
+
+    func needsCurrentMonthBaseline(referenceDate: Date = Date()) -> Bool {
+        guard needsUsagePrecisionMigration == false else { return true }
+        let month = UsageTime.formatter("yyyy-MM").string(from: referenceDate)
+        return defaults.string(forKey: Keys.usageBaselineMonth) != month
+    }
+
+    private var needsUsagePrecisionMigration: Bool {
+        defaults.integer(forKey: Keys.usageHistorySchemaVersion) < Self.currentUsageHistorySchemaVersion
+    }
+
+    private func markCurrentMonthBaseline(referenceDate: Date) {
+        defaults.set(Self.currentUsageHistorySchemaVersion, forKey: Keys.usageHistorySchemaVersion)
+        defaults.set(UsageTime.formatter("yyyy-MM").string(from: referenceDate), forKey: Keys.usageBaselineMonth)
     }
 
     func loadUsageRecords() -> [UsageRecord] {
@@ -66,6 +158,8 @@ final class LocalCache {
     func clearAll() {
         defaults.removeObject(forKey: Keys.dashboard)
         defaults.removeObject(forKey: Keys.usageHistory)
+        defaults.removeObject(forKey: Keys.usageHistorySchemaVersion)
+        defaults.removeObject(forKey: Keys.usageBaselineMonth)
     }
 
     // MARK: - Native Widget

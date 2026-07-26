@@ -49,11 +49,19 @@ func currencySymbol(for currencyCode: String) -> String {
 }
 
 func formattedCurrency(_ value: Double, currencyCode: String) -> String {
-    "\(currencySymbol(for: currencyCode))\(String(format: "%.2f", value))"
+    formattedCurrency(Decimal(value), currencyCode: currencyCode)
 }
 
 func formattedCurrency(_ value: Decimal, currencyCode: String) -> String {
-    formattedCurrency(NSDecimalNumber(decimal: value).doubleValue, currencyCode: currencyCode)
+    let formatter = NumberFormatter()
+    formatter.locale = Locale(identifier: "en_US_POSIX")
+    formatter.numberStyle = .decimal
+    formatter.usesGroupingSeparator = false
+    formatter.minimumFractionDigits = 2
+    formatter.maximumFractionDigits = 2
+    formatter.roundingMode = .down
+    let amount = formatter.string(from: NSDecimalNumber(decimal: value)) ?? "0.00"
+    return "\(currencySymbol(for: currencyCode))\(amount)"
 }
 
 func decimalAmount(fromCents cents: Int) -> Decimal {
@@ -71,6 +79,17 @@ func roundedCents(from amount: Decimal) -> Int {
     return NSDecimalNumber(decimal: rounded).intValue
 }
 
+func truncatedCents(from amount: Decimal) -> Int {
+    var amount = amount
+    var hundred = Decimal(100)
+    var cents = Decimal()
+    NSDecimalMultiply(&cents, &amount, &hundred, .plain)
+
+    var truncated = Decimal()
+    NSDecimalRound(&truncated, &cents, 0, .down)
+    return NSDecimalNumber(decimal: truncated).intValue
+}
+
 // MARK: - DeepSeek API 响应模型
 
 /// 余额查询响应
@@ -84,17 +103,36 @@ struct BalanceResponse: Codable {
         case balanceInfos = "balance_infos"
     }
 
-    /// Prefer CNY when DeepSeek returns multiple currency balances.
-    /// The API can change the order of balance_infos, so callers should not
-    /// rely on the first item being the display currency.
+    /// Select a display balance without combining currencies or converting them.
     var preferredBalanceInfo: BalanceInfo? {
-        if let cny = balanceInfos.first(where: { $0.currency.caseInsensitiveCompare("CNY") == .orderedSame }) {
-            return cny
+        preferredBalanceInfo(matching: nil)
+    }
+
+    func preferredBalanceInfo(matching currencyCode: String?) -> BalanceInfo? {
+        let nonZeroBalances = balanceInfos.filter {
+            (Decimal(string: $0.totalBalance, locale: Locale(identifier: "en_US_POSIX")) ?? .zero) != .zero
         }
-        if let nonZero = balanceInfos.first(where: { (Double($0.totalBalance) ?? 0) > 0 }) {
-            return nonZero
+
+        if nonZeroBalances.count == 1 {
+            return nonZeroBalances[0]
         }
-        return balanceInfos.first
+
+        if let currencyCode {
+            let preferredCode = normalizedCurrencyCode(currencyCode)
+            if let matchingNonZero = nonZeroBalances.first(where: {
+                normalizedCurrencyCode($0.currency) == preferredCode
+            }) {
+                return matchingNonZero
+            }
+            if nonZeroBalances.isEmpty,
+               let matchingBalance = balanceInfos.first(where: {
+                   normalizedCurrencyCode($0.currency) == preferredCode
+               }) {
+                return matchingBalance
+            }
+        }
+
+        return nonZeroBalances.first ?? balanceInfos.first
     }
 }
 
@@ -323,7 +361,7 @@ struct ModelUsageSummary: Identifiable {
     let currencyCode: String
 
     var costInCents: Int {
-        roundedCents(from: costAmount)
+        truncatedCents(from: costAmount)
     }
 
     var totalTokensFormatted: String {
