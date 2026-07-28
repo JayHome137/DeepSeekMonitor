@@ -4,11 +4,14 @@ DeepSeek Monitor is a local macOS utility. Data stays on your Mac unless you exp
 
 ## API Key
 
-The API Key is stored locally via macOS UserDefaults under the key `deepseek_api_key` in the preferences domain `com.deepseek.monitor`:
+The API key is stored as a generic password in the macOS login Keychain:
 
 ```text
-~/Library/Preferences/com.deepseek.monitor.plist
+service: com.deepseek.monitor
+account: deepseek-api-key
 ```
+
+When upgrading from a legacy version, the app removes the old `deepseek_api_key` UserDefaults value only after the Keychain write and readback both succeed. If migration fails, the old value remains available and the app reports the storage error without including the key.
 
 The API key is not written into the WidgetKit App Group snapshot.
 

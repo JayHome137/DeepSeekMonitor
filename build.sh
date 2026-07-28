@@ -18,7 +18,7 @@ WIDGET_APPEX="WidgetSupport.appex"
 APP_BUNDLE_ID="com.deepseek.monitor"
 WIDGET_BUNDLE_ID="com.deepseek.monitor.widget"
 TEAM_ID="N5YV5FV235"
-MARKETING_VERSION="1.4.9"
+MARKETING_VERSION="1.4.10"
 
 # 颜色输出
 RED='\033[0;31m'
@@ -441,6 +441,56 @@ build_release_xcode() {
     codesign --verify --deep --strict --verbose=2 "${PROJECT_NAME}.app"
 }
 
+build_debug_xcode_and_run() {
+    if [ ! -d "${PROJECT_NAME}.xcodeproj" ]; then
+        error "缺少 ${PROJECT_NAME}.xcodeproj，无法生成稳定签名的 Debug App"
+        exit 1
+    fi
+
+    local xcode_build_dir="${BUILD_DIR}/xcode-debug"
+    local xcode_obj_dir="${xcode_build_dir}/Intermediates"
+    local xcode_app="${xcode_build_dir}/Debug/${PROJECT_NAME}.app"
+    local code_sign_identity="${CODE_SIGN_IDENTITY:-}"
+
+    if [ -z "$code_sign_identity" ]; then
+        code_sign_identity=$(security find-identity -v -p codesigning 2>/dev/null | awk -F '"' '/Apple Development|Mac Developer/ { print $2; exit }')
+    fi
+    if [ -z "$code_sign_identity" ]; then
+        error "运行带钥匙串访问的 Debug App 需要 Apple Development / Mac Developer 签名身份"
+        exit 1
+    fi
+
+    increment_build
+    rm -rf "$xcode_build_dir"
+    kill_running_app
+
+    xcodebuild \
+        -project "${PROJECT_NAME}.xcodeproj" \
+        -scheme "$PROJECT_NAME" \
+        -configuration Debug \
+        -destination "generic/platform=macOS" \
+        "SYMROOT=$PWD/$xcode_build_dir" \
+        "OBJROOT=$PWD/$xcode_obj_dir" \
+        CODE_SIGN_STYLE=Automatic \
+        "DEVELOPMENT_TEAM=$TEAM_ID" \
+        "CODE_SIGN_IDENTITY=$code_sign_identity" \
+        build
+
+    if [ ! -d "$xcode_app" ]; then
+        error "Xcode 未生成 Debug App: $xcode_app"
+        exit 1
+    fi
+
+    codesign --verify --deep --strict --verbose=2 "$xcode_app"
+    if ! codesign -dvv "$xcode_app" 2>&1 | grep -q "TeamIdentifier=$TEAM_ID"; then
+        error "Debug App 未使用预期的 Team ID 签名"
+        exit 1
+    fi
+
+    info "启动稳定签名的 Debug App: $xcode_app"
+    open "$xcode_app"
+}
+
 # 检测 Xcode 命令行工具
 if ! command -v swift &> /dev/null; then
     error "未找到 Swift 编译器。请安装 Xcode 或 Xcode Command Line Tools。"
@@ -482,14 +532,7 @@ case "$MODE" in
 
     run)
         info "构建并运行..."
-        increment_build
-
-        swift build -c debug
-        swift build -c debug --target "${WIDGET_NAME}" 2>/dev/null || true
-        APP_PATH="${BUILD_DIR}/debug/${PROJECT_NAME}"
-
-        info "启动 ${PROJECT_NAME}..."
-        "${APP_PATH}" &
+        build_debug_xcode_and_run
         ;;
 
     icon)

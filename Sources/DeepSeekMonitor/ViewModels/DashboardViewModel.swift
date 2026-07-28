@@ -67,6 +67,8 @@ final class DashboardViewModel: ObservableObject {
     @Published private(set) var usageLastUpdated: Date?
     /// 是否已配置 API Key
     @Published private(set) var hasAPIKey: Bool = false
+    /// API Key 安全存储或迁移错误
+    @Published private(set) var apiKeyStorageError: String?
     /// 面板驻留时间（秒）
     @Published var panelResidenceSeconds: TimeInterval = UserDefaults.standard.double(forKey: "panel_residence_seconds") {
         didSet {
@@ -109,6 +111,7 @@ final class DashboardViewModel: ObservableObject {
     init() {
         panelResidenceSeconds = Self.normalizedPanelResidence(panelResidenceSeconds)
         hasAPIKey = service.hasAPIKey
+        apiKeyStorageError = service.apiKeyStorageWarning
         let cachedRecords = LocalCache.shared.loadUsageRecords()
         if cachedRecords.isEmpty {
             UsageAutoImportService.resetRememberedImport()
@@ -263,16 +266,28 @@ final class DashboardViewModel: ObservableObject {
     // MARK: - API Key
 
     /// 设置 API Key 并立即刷新
-    func setAPIKey(_ key: String) {
-        service.apiKey = key
-        hasAPIKey = service.hasAPIKey
+    func setAPIKey(_ key: String) throws {
+        do {
+            try service.saveAPIKey(key)
+        } catch {
+            apiKeyStorageError = error.localizedDescription
+            throw error
+        }
+        hasAPIKey = true
+        apiKeyStorageError = nil
         Task { await refresh() }
     }
 
     /// 清除 API Key 并重置状态
-    func clearAPIKey() {
-        service.clearAPIKey()
+    func clearAPIKey() throws {
+        do {
+            try service.clearAPIKey()
+        } catch {
+            apiKeyStorageError = error.localizedDescription
+            throw error
+        }
         hasAPIKey = false
+        apiKeyStorageError = nil
 
         // 清除本地缓存
         LocalCache.shared.clearAll()

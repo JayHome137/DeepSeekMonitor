@@ -2,7 +2,7 @@
 
 [English README](README_EN.MD) | 当前默认 README 为中文说明，英文版请查看 `README_EN.MD`。
 
-DeepSeek Monitor 是一款 macOS 菜单栏应用，用于监控 DeepSeek V4 Flash / Pro 的账户余额、Token 用量和消费情况。当前发布版本为 **v1.4.9**。
+DeepSeek Monitor 是一款 macOS 菜单栏应用，用于监控 DeepSeek V4 Flash / Pro 的账户余额、Token 用量和消费情况。当前发布版本为 **v1.4.10**。
 
 需要 **macOS 14 或更高版本**；支持 **M 系列 Mac**，也支持仍可升级到 macOS 14+ 的 **Intel Mac**。
 
@@ -35,7 +35,7 @@ DeepSeek Monitor 是一款 macOS 菜单栏应用，用于监控 DeepSeek V4 Flas
 - **余额刷新设置**：支持 30 秒、60 秒、2 分钟、5 分钟自动刷新账户余额。
 - **开机自启**：可选注册 macOS 登录项，登录后自动启动应用并保持小组件数据更新。
 - **本地缓存**：应用重启后立即显示上次数据，避免白屏。
-- **本地优先**：API Key、用量缓存和小组件快照都保存在这台 Mac 上。
+- **本地优先**：API Key 保存在 macOS 钥匙串，用量缓存和小组件快照只保存在这台 Mac 上。
 
 ## 安装
 
@@ -74,6 +74,9 @@ cd DeepSeekMonitor
 # 可选：从 SVG 重新生成 AppIcon.icns 和 asset catalog 图标图片
 ./build.sh icon
 
+# 本地开发：构建并打开使用开发证书稳定签名的 Debug App
+./build.sh run
+
 # 在项目目录构建签名 release app 和 DMG
 ./build.sh release
 
@@ -81,7 +84,7 @@ cd DeepSeekMonitor
 ./build.sh restart
 ```
 
-`./build.sh release` 会递增内部 build 号，在可用时通过 Xcode 构建主应用和 `WidgetSupport.appex`，签名两个 bundle，在项目根目录生成 `DeepSeekMonitor.app`，并打包 `DeepSeekMonitor-v<version>.dmg`。
+`./build.sh run` 需要 Apple Development / Mac Developer 签名身份和本地 Xcode 项目，并使用稳定签名的 Debug App，避免反复重建时触发新的钥匙串授权。`./build.sh release` 会递增内部 build 号，在可用时通过 Xcode 构建主应用和 `WidgetSupport.appex`，签名两个 bundle，在项目根目录生成 `DeepSeekMonitor.app`，并打包 `DeepSeekMonitor-v<version>.dmg`。
 
 只针对这个项目，release 脚本还会在打包前清理旧的 DeepSeekMonitor 系统注册和 WidgetKit / Chrono 缓存，包括旧的 `/Applications/DeepSeekMonitor.app` 副本，以避免 WidgetKit 绑定到过期的本地构建。
 
@@ -105,6 +108,8 @@ AppDelegate
        -> ModelDetailWindowController
   -> DashboardViewModel
        -> DeepSeekService
+            -> APIKeyStore
+                 -> macOS Keychain
        -> LocalCache
             -> UserDefaults
             -> App Group snapshot
@@ -114,7 +119,7 @@ AppDelegate
 
 ## 数据存储
 
-- API Key：`~/Library/Preferences/com.deepseek.monitor.plist`，key 为 `deepseek_api_key`
+- API Key：macOS 登录钥匙串（service：`com.deepseek.monitor`，account：`deepseek-api-key`）；升级时会在钥匙串写入并回读成功后删除旧的 `deepseek_api_key`
 - 主面板缓存：`cached_dashboard` / `cached_usage_history`
 - 原生小组件 App Group：`N5YV5FV235.group.com.deepseek.monitor`
 - 小组件相关 key：`widget_snapshot`、`native_widget_enabled`
@@ -128,7 +133,7 @@ AppDelegate
 - SwiftUI + AppKit + WidgetKit
 - Foundation URLSession
 - WKWebView 自动化
-- UserDefaults + App Group shared defaults
+- macOS Keychain + UserDefaults + App Group shared defaults
 - Shell 构建脚本：图标、签名、release 构建、DMG 打包和内部 build 号更新
 
 ## 许可证

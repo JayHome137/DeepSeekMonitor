@@ -2,7 +2,7 @@
 
 [中文 README](README.md) | The default README is now Chinese. This file keeps the English version of the same content.
 
-macOS menu bar app for monitoring DeepSeek V4 Flash / Pro balance, token usage, and billing. The current release is **v1.4.9**.
+macOS menu bar app for monitoring DeepSeek V4 Flash / Pro balance, token usage, and billing. The current release is **v1.4.10**.
 
 Requires **macOS 14 or later**; compatible with **Apple Silicon** and **Intel Macs** that can run macOS 14+.
 
@@ -35,7 +35,7 @@ Requires **macOS 14 or later**; compatible with **Apple Silicon** and **Intel Ma
 - **Balance refresh** — refresh the account balance every 30 seconds, 60 seconds, 2 minutes, or 5 minutes.
 - **Launch at login** — optional macOS login item so the widget data stays fresh after sign-in.
 - **Local cache** — dashboard and widget data are available immediately after app restart.
-- **Local-only storage** — API key, cached usage, and widget snapshots stay on this Mac.
+- **Local-only storage** — the API key is stored in macOS Keychain, while cached usage and widget snapshots stay on this Mac.
 
 ## Install
 
@@ -74,6 +74,9 @@ cd DeepSeekMonitor
 # Optional: regenerate AppIcon.icns and asset catalog icon images
 ./build.sh icon
 
+# Local development: build and open a stably development-signed Debug app
+./build.sh run
+
 # Build signed release app and DMG in the project directory
 ./build.sh release
 
@@ -81,7 +84,7 @@ cd DeepSeekMonitor
 ./build.sh restart
 ```
 
-`./build.sh release` increments the internal build number, builds the app and `WidgetSupport.appex` with Xcode when available, signs both bundles, creates `DeepSeekMonitor.app`, and packages `DeepSeekMonitor-v<version>.dmg` in the project root.
+`./build.sh run` requires an Apple Development / Mac Developer signing identity and the local Xcode project. It uses a stably signed Debug app so repeated rebuilds do not trigger new Keychain authorization prompts. `./build.sh release` increments the internal build number, builds the app and `WidgetSupport.appex` with Xcode when available, signs both bundles, creates `DeepSeekMonitor.app`, and packages `DeepSeekMonitor-v<version>.dmg` in the project root.
 
 For this project only, the release script also clears stale DeepSeekMonitor system registrations and WidgetKit/Chrono caches before packaging, including old `/Applications/DeepSeekMonitor.app` copies. This avoids WidgetKit binding to stale local builds.
 
@@ -105,6 +108,8 @@ AppDelegate
        -> ModelDetailWindowController
   -> DashboardViewModel
        -> DeepSeekService
+            -> APIKeyStore
+                 -> macOS Keychain
        -> LocalCache
             -> UserDefaults
             -> App Group snapshot
@@ -114,7 +119,7 @@ AppDelegate
 
 ## Data Storage
 
-- API key: `~/Library/Preferences/com.deepseek.monitor.plist`, key `deepseek_api_key`
+- API key: macOS login Keychain (service `com.deepseek.monitor`, account `deepseek-api-key`); during upgrade, the legacy `deepseek_api_key` value is removed only after a successful Keychain write and readback
 - Dashboard cache: `cached_dashboard` / `cached_usage_history`
 - Native widget App Group: `N5YV5FV235.group.com.deepseek.monitor`
 - Widget keys: `widget_snapshot`, `native_widget_enabled`
@@ -128,7 +133,7 @@ No analytics, telemetry, or third-party tracking is included.
 - SwiftUI + AppKit + WidgetKit
 - Foundation URLSession
 - WKWebView automation
-- UserDefaults + App Group shared defaults
+- macOS Keychain + UserDefaults + App Group shared defaults
 - Shell build script for icons, signing, release builds, DMG packaging, and internal build number updates
 
 ## License
