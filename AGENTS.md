@@ -7,7 +7,8 @@ Swift 5.9+ / SwiftUI + AppKit + WidgetKit / SPM + Xcode project / macOS 14+
 
 ```text
 AppDelegate -> MenuBarManager -> FloatingPanel / SettingsWindow / ModelDetailWindow
-            -> DashboardViewModel -> DeepSeekService / LocalCache
+            -> DashboardViewModel -> DeepSeekService -> APIKeyStore -> Keychain
+                                  -> LocalCache
             -> WidgetSupport reads App Group snapshot
 ```
 
@@ -25,7 +26,8 @@ AppDelegate -> MenuBarManager -> FloatingPanel / SettingsWindow / ModelDetailWin
 | `Sources/DeepSeekMonitor/App.swift` | `@main` entry, sleep/wake and deep-link handling. |
 | `Sources/DeepSeekMonitor/MenuBarManager.swift` | NSStatusBar, main panel, settings/detail routing, widget deep links, hover auto-close. |
 | `Sources/DeepSeekMonitor/ViewModels/DashboardViewModel.swift` | Polling, balance/usage aggregation, cache, CSV import flow. |
-| `Sources/DeepSeekMonitor/Services/DeepSeekService.swift` | DeepSeek API calls and API key storage. |
+| `Sources/DeepSeekMonitor/Services/DeepSeekService.swift` | DeepSeek API calls and in-process API key access. |
+| `Sources/DeepSeekMonitor/Services/APIKeyStore.swift` | Keychain storage and one-time migration from legacy UserDefaults. |
 | `Sources/DeepSeekMonitor/Services/LocalCache.swift` | Dashboard cache and WidgetKit App Group snapshot. |
 | `Sources/DeepSeekMonitor/Views/ContentView.swift` | Main menu bar dashboard. |
 | `Sources/DeepSeekMonitor/Views/ModelDetailWindowController.swift` | V4 Flash / Pro side panel, same size as dashboard. |
@@ -39,6 +41,7 @@ AppDelegate -> MenuBarManager -> FloatingPanel / SettingsWindow / ModelDetailWin
 
 ```bash
 ./build.sh icon       # Generate AppIcon.icns and asset catalog icon images from SVG.
+./build.sh run        # Build and open a stably development-signed Xcode Debug app.
 ./build.sh release    # Increment build, build signed app + appex, create app and DMG in project root.
 ./build.sh restart    # Run release, then open the generated project-root app.
 ./build.sh dmg        # Run release and print DMG install guidance.
@@ -51,6 +54,10 @@ Release outputs stay in the project root: `DeepSeekMonitor.app` and `DeepSeekMon
 ### Native WidgetKit signing
 
 WidgetKit extensions on macOS 26 need a trusted Apple Development certificate. Xcode automatic signing is used when available. The app and appex must both carry `N5YV5FV235.group.com.deepseek.monitor`.
+
+### API key storage
+
+The API key is stored as a generic password in the macOS login Keychain. On first launch after upgrade, `APIKeyStore` copies the legacy `deepseek_api_key` UserDefaults value, verifies the Keychain readback, and only then removes the legacy value. `build.sh run` requires a stable Apple Development / Mac Developer signature so local rebuilds retain Keychain access without repeated authorization prompts.
 
 ### Widget data and cache
 
@@ -78,7 +85,7 @@ DeepSeek's `/v1/usage` can return 404. Balance should still display, and usage s
 
 ## Data Storage
 
-- API key: `~/Library/Preferences/com.deepseek.monitor.plist`, key `deepseek_api_key`.
+- API key: macOS login Keychain, service `com.deepseek.monitor`, account `deepseek-api-key`.
 - Dashboard cache: `cached_dashboard`, `cached_usage_history`.
 - Widget App Group: `~/Library/Group Containers/N5YV5FV235.group.com.deepseek.monitor/`, keys `widget_snapshot`, `native_widget_enabled`.
 - Auto-import folder: `~/Library/Application Support/DeepSeekMonitor/usage-sync/`.

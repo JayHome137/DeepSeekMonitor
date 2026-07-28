@@ -48,6 +48,9 @@ final class DeepSeekService {
 
     private let baseURL = "https://api.deepseek.com"
     private let session: URLSession
+    private let apiKeyStore: APIKeyStore
+    private var storedAPIKey: String?
+    private(set) var apiKeyStorageWarning: String?
 
     // MARK: - Init
 
@@ -57,6 +60,11 @@ final class DeepSeekService {
         config.timeoutIntervalForResource = 30
         config.waitsForConnectivity = true
         session = URLSession(configuration: config)
+
+        apiKeyStore = APIKeyStore()
+        let loadResult = apiKeyStore.loadAndMigrate()
+        storedAPIKey = loadResult.apiKey
+        apiKeyStorageWarning = loadResult.migrationWarning
     }
 
     // MARK: - API Key
@@ -66,23 +74,23 @@ final class DeepSeekService {
         (apiKey ?? "").isEmpty == false
     }
 
-    /// 读取 API Key（本地构建版本使用 UserDefaults，避免频繁重建触发钥匙串授权弹窗）
+    /// 当前进程已加载的 API Key
     var apiKey: String? {
-        get {
-            UserDefaults.standard.string(forKey: "deepseek_api_key")
-        }
-        set {
-            if let newValue, !newValue.isEmpty {
-                UserDefaults.standard.set(newValue, forKey: "deepseek_api_key")
-            } else {
-                UserDefaults.standard.removeObject(forKey: "deepseek_api_key")
-            }
-        }
+        storedAPIKey
+    }
+
+    /// 保存 API Key，钥匙串回读校验成功后才更新当前状态
+    func saveAPIKey(_ apiKey: String) throws {
+        try apiKeyStore.save(apiKey)
+        storedAPIKey = apiKey
+        apiKeyStorageWarning = nil
     }
 
     /// 清除 API Key
-    func clearAPIKey() {
-        UserDefaults.standard.removeObject(forKey: "deepseek_api_key")
+    func clearAPIKey() throws {
+        try apiKeyStore.delete()
+        storedAPIKey = nil
+        apiKeyStorageWarning = nil
     }
 
     // MARK: - Balance
@@ -149,7 +157,7 @@ final class DeepSeekService {
     }
 
     private func setRequestHeaders(_ request: inout URLRequest) {
-        request.setValue("Bearer \(apiKey ?? "")", forHTTPHeaderField: "Authorization")
+        request.setValue("Bearer \(storedAPIKey ?? "")", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Accept")
     }
 

@@ -114,7 +114,11 @@ struct SettingsView: View {
         .onAppear {
             // 重新打开设置时回填已保存的 Key，避免重复输入
             apiKeyInput = DeepSeekService.shared.apiKey ?? ""
-            verifyStatus = .idle
+            if let storageError = viewModel.apiKeyStorageError {
+                verifyStatus = .failure(storageError)
+            } else {
+                verifyStatus = .idle
+            }
             usageImportStatus = .idle
             isLaunchAtLogin = SMAppService.mainApp.status == .enabled
             scrollResetToken += 1
@@ -201,20 +205,9 @@ struct SettingsView: View {
                 .font(.subheadline)
                 .fontWeight(.medium)
 
-            Text("用于调用 DeepSeek API 获取余额和用量数据。当前本地构建版本会保存在应用本地设置中。")
+            Text("用于调用 DeepSeek API 获取余额和用量数据，并通过 macOS 钥匙串安全保存在本机。")
                 .font(.caption)
                 .foregroundStyle(.secondary)
-
-            VStack(alignment: .leading, spacing: 4) {
-                Text("API Key 只在当前这台 Mac 本地保留。")
-                    .font(.caption2)
-                    .foregroundStyle(.tertiary)
-
-                Text("本地位置：~/Library/Preferences/com.deepseek.monitor.plist")
-                    .font(.caption2)
-                    .foregroundStyle(.tertiary)
-                    .textSelection(.enabled)
-            }
 
             // 输入框
             HStack(spacing: 8) {
@@ -268,10 +261,7 @@ struct SettingsView: View {
                 // 清空 Key
                 if viewModel.hasAPIKey {
                     Button("清除 Key", role: .destructive) {
-                        viewModel.clearAPIKey()
-                        apiKeyInput = ""
-                        verifyStatus = .idle
-                        usageImportStatus = .idle
+                        clearSavedAPIKey()
                     }
                     .font(.caption)
                     .controlSize(.small)
@@ -574,11 +564,7 @@ struct SettingsView: View {
 
             HStack(spacing: 12) {
                 Button(action: {
-                    LocalCache.shared.clearAll()
-                    viewModel.clearAPIKey()
-                    apiKeyInput = ""
-                    verifyStatus = .idle
-                    usageImportStatus = .idle
+                    clearSavedAPIKey()
                 }) {
                     HStack(spacing: 4) {
                         Image(systemName: "trash")
@@ -632,8 +618,13 @@ struct SettingsView: View {
         isVerifying = true
         verifyStatus = .verifying
 
-        // 保存到服务
-        viewModel.setAPIKey(apiKeyInput)
+        do {
+            try viewModel.setAPIKey(apiKeyInput)
+        } catch {
+            verifyStatus = .failure(error.localizedDescription)
+            isVerifying = false
+            return
+        }
 
         // 验证：发起一次余额查询
         Task {
@@ -652,6 +643,17 @@ struct SettingsView: View {
                 verifyStatus = .failure(error.localizedDescription)
                 isVerifying = false
             }
+        }
+    }
+
+    private func clearSavedAPIKey() {
+        do {
+            try viewModel.clearAPIKey()
+            apiKeyInput = ""
+            verifyStatus = .idle
+            usageImportStatus = .idle
+        } catch {
+            verifyStatus = .failure(error.localizedDescription)
         }
     }
 
