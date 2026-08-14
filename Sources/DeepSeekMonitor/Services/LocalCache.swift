@@ -25,11 +25,12 @@ final class LocalCache {
         static let usageHistory = "cached_usage_history"
         static let usageHistorySchemaVersion = "cached_usage_history_schema_version"
         static let usageBaselineMonth = "cached_usage_baseline_month"
+        static let usageTimeZoneSecondsFromGMT = "cached_usage_timezone_seconds_from_gmt"
         static let nativeWidgetEnabled = "native_widget_enabled"
         static let widgetSnapshot = "widget_snapshot"
     }
 
-    private static let currentUsageHistorySchemaVersion = 2
+    private static let currentUsageHistorySchemaVersion = 3
 
     private var sharedDefaults: UserDefaults? {
         UserDefaults(suiteName: "N5YV5FV235.group.com.deepseek.monitor")
@@ -68,21 +69,28 @@ final class LocalCache {
     func mergeUsageRecords(
         _ records: [UsageRecord],
         replacing range: UsageAutoImportService.ExportDateRange? = nil,
-        referenceDate: Date = Date()
+        referenceDate: Date = Date(),
+        timeZone: TimeZone? = nil
     ) -> [UsageRecord] {
+        let timeZone = timeZone ?? usageTimeZone
         let completesCurrentMonthBaseline = range.map {
-            Self.rangeCoversCurrentMonth($0, referenceDate: referenceDate)
+            Self.rangeCoversCurrentMonth(
+                $0,
+                referenceDate: referenceDate,
+                timeZone: timeZone
+            )
         } ?? false
-        let shouldDiscardLegacyHistory = needsUsagePrecisionMigration && completesCurrentMonthBaseline
+        let shouldDiscardLegacyHistory = needsUsageHistoryMigration && completesCurrentMonthBaseline
         let merged = Self.mergedUsageRecords(
             existing: shouldDiscardLegacyHistory ? [] : loadUsageRecords(),
             incoming: records,
             replacing: range,
-            referenceDate: referenceDate
+            referenceDate: referenceDate,
+            timeZone: timeZone
         )
         saveUsageRecords(merged)
         if completesCurrentMonthBaseline {
-            markCurrentMonthBaseline(referenceDate: referenceDate)
+            markCurrentMonthBaseline(referenceDate: referenceDate, timeZone: timeZone)
         }
         return merged
     }
@@ -91,7 +99,8 @@ final class LocalCache {
         existing: [UsageRecord],
         incoming: [UsageRecord],
         replacing range: UsageAutoImportService.ExportDateRange?,
-        referenceDate: Date
+        referenceDate: Date,
+        timeZone: TimeZone = UsageTime.defaultTimeZone
     ) -> [UsageRecord] {
         let retainedExisting: [UsageRecord]
         if let range {
@@ -101,12 +110,15 @@ final class LocalCache {
             retainedExisting = existing.filter { incomingKeys.contains(recordKey($0)) == false }
         }
 
-        let calendar = UsageTime.calendar
+        let calendar = UsageTime.calendar(in: timeZone)
         let today = calendar.startOfDay(for: referenceDate)
         let recentStart = calendar.date(byAdding: .day, value: -6, to: today) ?? today
         let monthStart = calendar.dateInterval(of: .month, for: today)?.start ?? today
         let retentionStart = min(recentStart, monthStart)
-        let retentionStartText = UsageTime.formatter("yyyy-MM-dd").string(from: retentionStart)
+        let retentionStartText = UsageTime.formatter(
+            "yyyy-MM-dd",
+            timeZone: timeZone
+        ).string(from: retentionStart)
 
         var byKey: [String: UsageRecord] = [:]
         for record in retainedExisting + incoming where record.date >= retentionStartText {
@@ -127,25 +139,59 @@ final class LocalCache {
 
     static func rangeCoversCurrentMonth(
         _ range: UsageAutoImportService.ExportDateRange,
-        referenceDate: Date
+        referenceDate: Date,
+        timeZone: TimeZone = UsageTime.defaultTimeZone
     ) -> Bool {
-        let expected = UsageAutoImportService.expectedCurrentMonthExportRange(referenceDate: referenceDate)
-        return range.startDate <= expected.startDate && range.endDateExclusive >= expected.endDateExclusive
+        let expected = UsageAutoImportService.expectedCurrentMonthExportRange(
+            referenceDate: referenceDate,
+            timeZone: timeZone
+        )
+        let calendar = UsageTime.calendar(in: timeZone)
+        let today = calendar.startOfDay(for: referenceDate)
+        let todayText = UsageTime.formatter(
+            "yyyy-MM-dd",
+            timeZone: timeZone
+        ).string(from: today)
+        return range.startDate <= expected.startDate &&
+            range.endDateExclusive >= todayText &&
+            range.endDateExclusive <= expected.endDateExclusive
     }
 
-    func needsCurrentMonthBaseline(referenceDate: Date = Date()) -> Bool {
-        guard needsUsagePrecisionMigration == false else { return true }
-        let month = UsageTime.formatter("yyyy-MM").string(from: referenceDate)
+    func needsCurrentMonthBaseline(
+        referenceDate: Date = Date(),
+        timeZone: TimeZone? = nil
+    ) -> Bool {
+        guard needsUsageHistoryMigration == false else { return true }
+        let timeZone = timeZone ?? usageTimeZone
+        let month = UsageTime.formatter(
+            "yyyy-MM",
+            timeZone: timeZone
+        ).string(from: referenceDate)
         return defaults.string(forKey: Keys.usageBaselineMonth) != month
     }
 
-    private var needsUsagePrecisionMigration: Bool {
+    private var needsUsageHistoryMigration: Bool {
         defaults.integer(forKey: Keys.usageHistorySchemaVersion) < Self.currentUsageHistorySchemaVersion
     }
 
-    private func markCurrentMonthBaseline(referenceDate: Date) {
+    private func markCurrentMonthBaseline(referenceDate: Date, timeZone: TimeZone) {
         defaults.set(Self.currentUsageHistorySchemaVersion, forKey: Keys.usageHistorySchemaVersion)
-        defaults.set(UsageTime.formatter("yyyy-MM").string(from: referenceDate), forKey: Keys.usageBaselineMonth)
+        defaults.set(
+            UsageTime.formatter("yyyy-MM", timeZone: timeZone).string(from: referenceDate),
+            forKey: Keys.usageBaselineMonth
+        )
+    }
+
+    var usageTimeZone: TimeZone {
+        let secondsFromGMT = defaults.object(forKey: Keys.usageTimeZoneSecondsFromGMT) == nil
+            ? 0
+            : defaults.integer(forKey: Keys.usageTimeZoneSecondsFromGMT)
+        return TimeZone(secondsFromGMT: secondsFromGMT) ?? UsageTime.defaultTimeZone
+    }
+
+    func saveUsageTimeZone(secondsFromGMT: Int) {
+        guard TimeZone(secondsFromGMT: secondsFromGMT) != nil else { return }
+        defaults.set(secondsFromGMT, forKey: Keys.usageTimeZoneSecondsFromGMT)
     }
 
     func loadUsageRecords() -> [UsageRecord] {
@@ -160,6 +206,7 @@ final class LocalCache {
         defaults.removeObject(forKey: Keys.usageHistory)
         defaults.removeObject(forKey: Keys.usageHistorySchemaVersion)
         defaults.removeObject(forKey: Keys.usageBaselineMonth)
+        defaults.removeObject(forKey: Keys.usageTimeZoneSecondsFromGMT)
     }
 
     // MARK: - Native Widget

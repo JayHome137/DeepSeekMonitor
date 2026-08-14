@@ -461,7 +461,7 @@ struct SettingsView: View {
                 .font(.subheadline)
                 .fontWeight(.medium)
 
-            Text("首次需要你手动登录一次 DeepSeek 平台。登录后，App 会按设定频率静默导出并导入本月用量 ZIP。官方数据采用 UTC+0，且可能延迟约 5 分钟。")
+            Text("首次需要你手动登录一次 DeepSeek 平台。登录后，App 会按设定频率静默导出并导入本月用量 ZIP。用量日期以官方导出文件携带的时区为准，网页数据可能延迟约 5 分钟。")
                 .font(.caption)
                 .foregroundStyle(.secondary)
 

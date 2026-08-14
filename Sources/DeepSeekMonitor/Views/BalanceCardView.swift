@@ -36,13 +36,13 @@ struct BalanceCardView: View {
 
             HStack(spacing: 8) {
                 compactMetric(
-                    title: "今日消费 · UTC+0",
+                    title: "今日消费 · 官方口径",
                     systemImage: "sun.max",
                     value: formattedCurrency(currentDayCost, currencyCode: usageCurrencyCode)
                 )
 
                 compactMetric(
-                    title: "本月消费 · UTC+0",
+                    title: "本月消费 · 官方口径",
                     systemImage: "calendar",
                     value: formattedCurrency(currentMonthCost, currencyCode: usageCurrencyCode)
                 )

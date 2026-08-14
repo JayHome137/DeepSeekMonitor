@@ -445,7 +445,7 @@ private struct MediumWidgetView: View {
             Spacer(minLength: 0)
 
             if entry.hasData {
-                Text("用量 \(utcTime(entry.usageUpdatedAt)) · UTC+0")
+                Text("用量更新 \(localTime(entry.usageUpdatedAt))")
                     .font(.system(size: 10, weight: .regular))
                     .foregroundStyle(widgetTextFaint(for: colorScheme))
                     .widgetAccentable(false)
@@ -507,10 +507,10 @@ private func costFormatted(_ cents: Int, code: String) -> String {
     currency(Double(cents) / 100.0, code: code)
 }
 
-private func utcTime(_ date: Date) -> String {
+private func localTime(_ date: Date) -> String {
     let formatter = DateFormatter()
     formatter.locale = Locale(identifier: "zh_CN")
-    formatter.timeZone = TimeZone(secondsFromGMT: 0)
+    formatter.timeZone = .current
     formatter.dateFormat = "HH:mm"
     return formatter.string(from: date)
 }

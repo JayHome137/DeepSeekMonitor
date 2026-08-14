@@ -1,34 +1,52 @@
 import Foundation
 
 enum UsageTime {
-    static let timeZone = TimeZone(secondsFromGMT: 0)!
+    static let defaultTimeZone = TimeZone(secondsFromGMT: 0)!
 
-    static var calendar: Calendar {
+    static func calendar(in timeZone: TimeZone) -> Calendar {
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = timeZone
         return calendar
     }
 
-    static func formatter(_ dateFormat: String) -> DateFormatter {
+    static func formatter(
+        _ dateFormat: String,
+        timeZone: TimeZone = defaultTimeZone
+    ) -> DateFormatter {
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "en_US_POSIX")
         formatter.timeZone = timeZone
         formatter.dateFormat = dateFormat
+        formatter.isLenient = false
         return formatter
     }
 
-    static func day(from raw: String) -> Date? {
-        guard let date = formatter("yyyy-MM-dd").date(from: raw) else { return nil }
-        return calendar.startOfDay(for: date)
+    static func day(
+        from raw: String,
+        timeZone: TimeZone = defaultTimeZone
+    ) -> Date? {
+        guard let date = formatter("yyyy-MM-dd", timeZone: timeZone).date(from: raw) else {
+            return nil
+        }
+        return calendar(in: timeZone).startOfDay(for: date)
     }
 
-    static func isSameDay(_ raw: String, as referenceDate: Date) -> Bool {
-        guard let date = day(from: raw) else { return false }
-        return calendar.isDate(date, inSameDayAs: referenceDate)
+    static func isSameDay(
+        _ raw: String,
+        as referenceDate: Date,
+        timeZone: TimeZone = defaultTimeZone
+    ) -> Bool {
+        guard let date = day(from: raw, timeZone: timeZone) else { return false }
+        return calendar(in: timeZone).isDate(date, inSameDayAs: referenceDate)
     }
 
-    static func isSameMonth(_ raw: String, as referenceDate: Date) -> Bool {
-        guard let date = day(from: raw) else { return false }
+    static func isSameMonth(
+        _ raw: String,
+        as referenceDate: Date,
+        timeZone: TimeZone = defaultTimeZone
+    ) -> Bool {
+        guard let date = day(from: raw, timeZone: timeZone) else { return false }
+        let calendar = calendar(in: timeZone)
         let dateComponents = calendar.dateComponents([.year, .month], from: date)
         let referenceComponents = calendar.dateComponents([.year, .month], from: referenceDate)
         return dateComponents == referenceComponents

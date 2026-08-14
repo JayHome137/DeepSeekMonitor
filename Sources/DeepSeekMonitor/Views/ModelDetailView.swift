@@ -118,7 +118,7 @@ struct ModelDetailView: View {
         guard let first = points.first?.label, let last = points.last?.label else {
             return "暂无日期范围"
         }
-        return "\(first) - \(last) · UTC+0"
+        return "\(first) - \(last) · 官方导出时区"
     }
 
     private var tint: Color {
@@ -138,7 +138,7 @@ struct ModelDetailView: View {
     private var fullDateFormatter: DateFormatter {
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.timeZone = UsageTime.timeZone
+        formatter.timeZone = viewModel.usageTimeZone
         formatter.dateFormat = "yyyy-MM-dd"
         return formatter
     }
