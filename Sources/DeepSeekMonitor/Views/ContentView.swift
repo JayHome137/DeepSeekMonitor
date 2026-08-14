@@ -61,7 +61,7 @@ struct ContentView: View {
                     Image(systemName: "arrow.clockwise")
                 }
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.borderless)
             .focusEffectDisabled()
             .help("刷新余额")
             .disabled(viewModel.isLoading || !viewModel.hasAPIKey)
@@ -69,14 +69,14 @@ struct ContentView: View {
             Button(action: onOpenSettings) {
                 Image(systemName: "gearshape")
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.borderless)
             .focusEffectDisabled()
             .help("设置")
 
             Button(action: onClose) {
                 Image(systemName: "xmark")
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.borderless)
             .focusEffectDisabled()
             .help("关闭")
         }
@@ -86,6 +86,18 @@ struct ContentView: View {
         VStack(spacing: 10) {
             if let errorMessage = viewModel.errorMessage {
                 statusMessage(errorMessage, systemImage: "xmark.octagon.fill", color: .red)
+            } else if let usageFailureMessage = viewModel.usageFailureMessage {
+                statusMessage(
+                    usageFailureMessage,
+                    systemImage: "exclamationmark.triangle.fill",
+                    color: .orange
+                )
+            } else if let usageNoticeMessage = viewModel.usageNoticeMessage {
+                statusMessage(
+                    usageNoticeMessage,
+                    systemImage: "info.circle.fill",
+                    color: .orange
+                )
             }
 
             BalanceCardView(

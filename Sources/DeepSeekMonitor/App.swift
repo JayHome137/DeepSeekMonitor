@@ -60,10 +60,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc private func systemDidWake() {
-        // 系统唤醒后：恢复定时刷新 + 立即刷新一次
+        // startAutoRefresh 本身会立即刷新一次。
         menuBarManager?.startAutoRefresh()
-        Task { [weak self] in
-            await self?.menuBarManager?.viewModel.refresh()
-        }
     }
 }

@@ -61,10 +61,10 @@ final class UsageImportTests: XCTestCase {
 
         let amountURL = try write(amountData, named: "amount-2026-07-20_2026-07-27.csv", in: directory)
         let costURL = try write(costData, named: "cost-2026-07-20_2026-07-27.csv", in: directory)
-        let record = try XCTUnwrap(
-            UsageCSVImporter.importRecords(from: amountURL, costURL: costURL).first
-        )
+        let result = try UsageCSVImporter.importResult(from: amountURL, costURL: costURL)
+        let record = try XCTUnwrap(result.records.first)
 
+        XCTAssertFalse(result.fileNameEndDateIsInclusive)
         XCTAssertEqual(record.date, "2026-07-25")
         XCTAssertEqual(record.modelName, DeepSeekModel.pro.rawValue)
         XCTAssertEqual(record.totalTokens, 1_700)
@@ -100,6 +100,7 @@ final class UsageImportTests: XCTestCase {
 
         XCTAssertEqual(result.records.count, 1)
         XCTAssertEqual(result.timeZoneSecondsFromGMT, 8 * 60 * 60)
+        XCTAssertTrue(result.fileNameEndDateIsInclusive)
         XCTAssertEqual(record.date, "2026-08-13")
         XCTAssertEqual(record.totalTokens, 1_700)
         XCTAssertEqual(record.inputCacheHitTokens, 1_000)
@@ -127,6 +128,7 @@ final class UsageImportTests: XCTestCase {
 
             XCTAssertEqual(result.records.first?.date, "2026-08-13")
             XCTAssertEqual(result.timeZoneSecondsFromGMT, item.seconds)
+            XCTAssertTrue(result.fileNameEndDateIsInclusive)
         }
     }
 
@@ -377,6 +379,7 @@ final class UsageImportTests: XCTestCase {
 
         XCTAssertFalse(result.records.isEmpty)
         XCTAssertNotNil(result.timeZoneSecondsFromGMT)
+        XCTAssertTrue(result.fileNameEndDateIsInclusive)
         XCTAssertGreaterThan(result.records.reduce(0) { $0 + $1.totalTokens }, 0)
         XCTAssertGreaterThan(result.records.reduce(0) { $0 + $1.requestCount }, 0)
         XCTAssertTrue(result.records.allSatisfy {
@@ -411,9 +414,14 @@ final class UsageImportTests: XCTestCase {
             .init(startDate: "2026-08-01", endDateExclusive: "2026-08-15")
         )
         for endDate in ["2026-08-14", "2026-08-15"] {
+            let range = UsageAutoImportService.ExportDateRange(
+                startDate: "2026-08-01",
+                endDateExclusive: endDate
+            )
             XCTAssertNoThrow(
                 try UsageAutoImportService.validateAutomaticExport(
-                    candidate(.init(startDate: "2026-08-01", endDateExclusive: endDate)),
+                    candidate(range),
+                    exportDateRange: range,
                     referenceDate: referenceDate,
                     timeZone: exportTimeZone
                 )
@@ -430,6 +438,7 @@ final class UsageImportTests: XCTestCase {
             XCTAssertThrowsError(
                 try UsageAutoImportService.validateAutomaticExport(
                     candidate(range),
+                    exportDateRange: range,
                     referenceDate: referenceDate,
                     timeZone: exportTimeZone
                 )
@@ -446,6 +455,97 @@ final class UsageImportTests: XCTestCase {
                 timeZone: exportTimeZone
             ),
             .init(startDate: "2026-08-08", endDateExclusive: "2026-08-15")
+        )
+    }
+
+    func testInclusiveFilenameEndIsNormalizedBeforeAutomaticValidation() throws {
+        let formatter = ISO8601DateFormatter()
+        let referenceDate = try XCTUnwrap(formatter.date(from: "2026-08-14T08:30:00Z"))
+        let exportTimeZone = try XCTUnwrap(TimeZone(secondsFromGMT: 8 * 60 * 60))
+        let declaredRange = UsageAutoImportService.ExportDateRange(
+            startDate: "2026-08-01",
+            endDateExclusive: "2026-08-14"
+        )
+        let records = [
+            makeUsageRecord(date: "2026-08-01", model: .flash, tokens: 10),
+            makeUsageRecord(date: "2026-08-14", model: .pro, tokens: 20),
+        ]
+        let resolvedRange = try XCTUnwrap(
+            UsageAutoImportService.resolvedExportDateRange(
+                declaredRange,
+                records: records,
+                fileNameEndDateIsInclusive: true
+            )
+        )
+        let placeholder = URL(fileURLWithPath: "/tmp/usage-export.zip")
+        let candidate = UsageAutoImportService.ImportCandidate(
+            sourceURL: placeholder,
+            preparedAmountCSVURL: placeholder,
+            preparedCostCSVURL: placeholder,
+            fingerprint: "inclusive-end",
+            sourceName: placeholder.lastPathComponent,
+            selectedCSVNames: [],
+            exportDateRange: declaredRange,
+            isArchive: true
+        )
+
+        XCTAssertEqual(
+            resolvedRange,
+            .init(startDate: "2026-08-01", endDateExclusive: "2026-08-15")
+        )
+        XCTAssertEqual(
+            try UsageAutoImportService.resolvedExportDateRange(
+                declaredRange,
+                records: [makeUsageRecord(date: "2026-08-13", model: .flash, tokens: 10)],
+                fileNameEndDateIsInclusive: true
+            ),
+            resolvedRange
+        )
+        XCTAssertNoThrow(
+            try UsageAutoImportService.validateAutomaticExport(
+                candidate,
+                exportDateRange: resolvedRange,
+                referenceDate: referenceDate,
+                timeZone: exportTimeZone
+            )
+        )
+    }
+
+    func testExclusiveFilenameEndRemainsUnchanged() throws {
+        let declaredRange = UsageAutoImportService.ExportDateRange(
+            startDate: "2026-08-01",
+            endDateExclusive: "2026-08-14"
+        )
+        let records = [
+            makeUsageRecord(date: "2026-08-13", model: .flash, tokens: 10),
+        ]
+
+        XCTAssertEqual(
+            try UsageAutoImportService.resolvedExportDateRange(
+                declaredRange,
+                records: records,
+                fileNameEndDateIsInclusive: false
+            ),
+            declaredRange
+        )
+    }
+
+    func testRangeNormalizationStillRejectsRecordsPastInclusiveEnd() {
+        let declaredRange = UsageAutoImportService.ExportDateRange(
+            startDate: "2026-08-01",
+            endDateExclusive: "2026-08-14"
+        )
+        let records = [
+            makeUsageRecord(date: "2026-08-14", model: .flash, tokens: 10),
+            makeUsageRecord(date: "2026-08-15", model: .pro, tokens: 20),
+        ]
+
+        XCTAssertThrowsError(
+            try UsageAutoImportService.resolvedExportDateRange(
+                declaredRange,
+                records: records,
+                fileNameEndDateIsInclusive: true
+            )
         )
     }
 

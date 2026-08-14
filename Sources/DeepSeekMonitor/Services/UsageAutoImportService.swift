@@ -4,6 +4,7 @@ enum UsageAutoImportService {
     private static let fingerprintKey = "auto_import_usage_fingerprint_v2"
     private static let rootFolderName = "usage-sync"
     private static let incomingFolderName = "incoming"
+    private static let failedFolderName = "failed"
     private static let workspaceFolderName = "workspace"
 
     struct ImportCandidate {
@@ -56,17 +57,27 @@ enum UsageAutoImportService {
         return incoming
     }
 
+    static func failedFolderURL() throws -> URL {
+        let failed = try autoImportRootFolderURL()
+            .appendingPathComponent(failedFolderName, isDirectory: true)
+        try FileManager.default.createDirectory(
+            at: failed,
+            withIntermediateDirectories: true,
+            attributes: nil
+        )
+        return failed
+    }
+
     static func watchedFolderURLs() throws -> [URL] {
         [try incomingFolderURL()]
     }
 
-    static func nextImportCandidate() throws -> ImportCandidate? {
+    static func nextImportCandidate(defaults: UserDefaults = .standard) throws -> ImportCandidate? {
         let incomingFolder = try incomingFolderURL()
         let candidates = try sourceCandidates(incomingFolder: incomingFolder)
         guard let latest = candidates.first else { return nil }
 
         let fingerprint = try fileFingerprint(for: latest)
-        let defaults = UserDefaults.standard
         if defaults.string(forKey: fingerprintKey) == fingerprint {
             return nil
         }
@@ -77,6 +88,10 @@ enum UsageAutoImportService {
     static func prepareImportCandidate(from sourceURL: URL) throws -> ImportCandidate {
         let fingerprint = try fileFingerprint(for: sourceURL)
         return try makeImportCandidate(from: sourceURL, fingerprint: fingerprint)
+    }
+
+    static func importFingerprint(for sourceURL: URL) throws -> String {
+        try fileFingerprint(for: sourceURL)
     }
 
     private static func makeImportCandidate(from sourceURL: URL, fingerprint: String) throws -> ImportCandidate {
@@ -150,13 +165,14 @@ enum UsageAutoImportService {
 
     static func validateAutomaticExport(
         _ candidate: ImportCandidate,
+        exportDateRange actualRange: ExportDateRange?,
         referenceDate: Date = Date(),
         timeZone: TimeZone
     ) throws {
         guard candidate.isArchive else {
             throw UsageCSVImportError.invalidExportArchive("自动网页导出必须返回官方 ZIP")
         }
-        guard let actualRange = candidate.exportDateRange else {
+        guard let actualRange else {
             throw UsageCSVImportError.invalidExportArchive("无法确认导出日期范围")
         }
 
@@ -176,6 +192,35 @@ enum UsageAutoImportService {
                 expectedEndDateExclusive: "\(expected.excludingToday.endDateExclusive) 或 \(expected.includingToday.endDateExclusive)"
             )
         }
+    }
+
+    static func resolvedExportDateRange(
+        _ declaredRange: ExportDateRange?,
+        records: [UsageRecord],
+        fileNameEndDateIsInclusive: Bool
+    ) throws -> ExportDateRange? {
+        guard let declaredRange else { return nil }
+
+        // Normalize both current inclusive filenames and legacy exclusive filenames
+        // to the app's single internal [start, end) representation.
+        let includesDeclaredEndDate = fileNameEndDateIsInclusive || records.contains {
+            $0.date == declaredRange.endDateExclusive
+        }
+        let resolvedRange: ExportDateRange
+        if includesDeclaredEndDate {
+            guard let nextDate = nextCalendarDate(after: declaredRange.endDateExclusive) else {
+                throw UsageCSVImportError.invalidExportArchive("导出文件名日期范围无效")
+            }
+            resolvedRange = ExportDateRange(
+                startDate: declaredRange.startDate,
+                endDateExclusive: nextDate
+            )
+        } else {
+            resolvedRange = declaredRange
+        }
+
+        try validateRecords(records, within: resolvedRange)
+        return resolvedRange
     }
 
     static func validateRecords(
@@ -203,8 +248,49 @@ enum UsageAutoImportService {
         return first
     }
 
-    static func markImported(_ fingerprint: String) {
-        UserDefaults.standard.set(fingerprint, forKey: fingerprintKey)
+    static func markImported(_ fingerprint: String, defaults: UserDefaults = .standard) {
+        defaults.set(fingerprint, forKey: fingerprintKey)
+    }
+
+    static func hasImported(_ fingerprint: String, defaults: UserDefaults = .standard) -> Bool {
+        defaults.string(forKey: fingerprintKey) == fingerprint
+    }
+
+    /// 将自动导入失败的源文件移出监听目录，保留给手动排查或重新导入。
+    @discardableResult
+    static func quarantineFailedImport(
+        _ sourceURL: URL,
+        failedFolder: URL? = nil
+    ) throws -> URL {
+        let fileManager = FileManager.default
+        guard fileManager.fileExists(atPath: sourceURL.path) else {
+            throw UsageCSVImportError.unreadableFile
+        }
+
+        let destinationFolder: URL
+        if let failedFolder {
+            destinationFolder = failedFolder
+        } else {
+            destinationFolder = try failedFolderURL()
+        }
+        try fileManager.createDirectory(
+            at: destinationFolder,
+            withIntermediateDirectories: true,
+            attributes: nil
+        )
+
+        var destination = destinationFolder.appendingPathComponent(sourceURL.lastPathComponent)
+        if fileManager.fileExists(atPath: destination.path) {
+            let baseName = sourceURL.deletingPathExtension().lastPathComponent
+            let pathExtension = sourceURL.pathExtension
+            let uniqueName = pathExtension.isEmpty
+                ? "\(baseName)-\(UUID().uuidString)"
+                : "\(baseName)-\(UUID().uuidString).\(pathExtension)"
+            destination = destinationFolder.appendingPathComponent(uniqueName)
+        }
+
+        try fileManager.moveItem(at: sourceURL, to: destination)
+        return destination
     }
 
     static func cleanupImportedSources(keeping keepURL: URL?) throws {
@@ -212,8 +298,8 @@ enum UsageAutoImportService {
         try cleanupCandidateFiles(in: incomingFolder, keeping: keepURL)
     }
 
-    static func resetRememberedImport() {
-        UserDefaults.standard.removeObject(forKey: fingerprintKey)
+    static func resetRememberedImport(defaults: UserDefaults = .standard) {
+        defaults.removeObject(forKey: fingerprintKey)
     }
 
     private static func sourceCandidates(incomingFolder: URL) throws -> [URL] {
@@ -345,6 +431,18 @@ enum UsageAutoImportService {
             startDate: String(name[startRange]),
             endDateExclusive: String(name[endRange])
         )
+    }
+
+    private static func nextCalendarDate(after raw: String) -> String? {
+        guard let date = UsageTime.day(from: raw),
+              let nextDate = UsageTime.calendar(in: UsageTime.defaultTimeZone).date(
+                  byAdding: .day,
+                  value: 1,
+                  to: date
+              ) else {
+            return nil
+        }
+        return UsageTime.formatter("yyyy-MM-dd").string(from: nextDate)
     }
 
     private static func clearManagedFolder(at url: URL) throws {

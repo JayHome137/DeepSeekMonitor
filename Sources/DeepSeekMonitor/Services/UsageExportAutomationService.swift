@@ -14,7 +14,6 @@ struct UsageExportDownloadEvent {
 
 private enum UsageExportScriptMessage {
     static let download = "usageExportDownload"
-    static let clickTrace = "usageExportClickTrace"
 }
 
 private enum UsageExportAutomationState {
@@ -39,8 +38,9 @@ final class UsageExportAutomationService: NSObject, ObservableObject {
             UserDefaults.standard.set(isEnabled, forKey: Self.enabledKey)
             if isEnabled {
                 statusMessage = "自动导出已开启"
-                requestExport(manual: false, openWindowOnFailure: false)
+                requestExport(manual: false)
             } else {
+                resetAutomationState()
                 statusMessage = "自动导出已关闭"
             }
         }
@@ -62,7 +62,6 @@ final class UsageExportAutomationService: NSObject, ObservableObject {
     @Published private(set) var statusMessage: String
     @Published private(set) var isLoggedIn = false
     @Published private(set) var lastDownloadFileName: String?
-    @Published private(set) var lastClickTraceSummary: String?
 
     private static let enabledKey = "usage_export_automation_enabled"
     private static let intervalKey = "usage_export_automation_interval_seconds"
@@ -74,7 +73,6 @@ final class UsageExportAutomationService: NSObject, ObservableObject {
     private var window: NSWindow?
     private var webView: WKWebView?
     private var pendingExportRequest = false
-    private var shouldShowWindowOnFailure = false
     private var lastAttemptAt: Date?
     private var activeDownload: WKDownload?
     private var activeDownloadTaskID: UUID?
@@ -109,7 +107,7 @@ final class UsageExportAutomationService: NSObject, ObservableObject {
             }
         }
         if isEnabled {
-            requestExport(manual: false, openWindowOnFailure: false)
+            requestExport(manual: false)
         }
     }
 
@@ -120,7 +118,6 @@ final class UsageExportAutomationService: NSObject, ObservableObject {
     }
 
     func closeWindow() {
-        shouldShowWindowOnFailure = false
         window?.orderOut(nil)
     }
 
@@ -136,7 +133,7 @@ final class UsageExportAutomationService: NSObject, ObservableObject {
     }
 
     func triggerManualExport() {
-        requestExport(manual: true, openWindowOnFailure: false)
+        requestExport(manual: true)
     }
 
     func reportImportSuccess(fileNames: [String]) {
@@ -147,23 +144,13 @@ final class UsageExportAutomationService: NSObject, ObservableObject {
         statusMessage = "下载完成但导入失败：\(message)"
     }
 
-    func armClickTrace() {
-        let webView = ensureWebView()
-        ensureWindow(with: webView)
-        window?.makeKeyAndOrderFront(nil)
-        NSApp.activate(ignoringOtherApps: true)
-        lastClickTraceSummary = "等待你在网页里点一次目标按钮..."
-        statusMessage = "点击追踪已开启，请在网页里手动点导出按钮"
-        webView.evaluateJavaScript("window.__deepseekClickTraceArmed = true;", completionHandler: nil)
-    }
-
     private func handleTimerTick() {
         guard isEnabled else { return }
         guard window?.isVisible != true else {
             statusMessage = "登录窗口打开中，本次后台导出已暂缓"
             return
         }
-        requestExport(manual: false, openWindowOnFailure: false)
+        requestExport(manual: false)
     }
 
     private func restartTimerIfNeeded() {
@@ -176,7 +163,7 @@ final class UsageExportAutomationService: NSObject, ObservableObject {
         return allowed.contains(value) ? value : defaultAutoExportInterval
     }
 
-    private func requestExport(manual: Bool, openWindowOnFailure: Bool) {
+    private func requestExport(manual: Bool) {
         guard automationState == .idle else {
             if manual {
                 statusMessage = "已有本月同步任务正在进行"
@@ -198,16 +185,13 @@ final class UsageExportAutomationService: NSObject, ObservableObject {
         rangeTriggerRetryCount = 0
         rangeOptionRetryCount = 0
         exportLookupRetryCount = 0
-        shouldShowWindowOnFailure = openWindowOnFailure
         activeExportTask = UsageExportTask(
             id: UUID(),
             referenceDate: Date()
         )
 
         let webView = ensureWebView()
-        if openWindowOnFailure == false {
-            window?.orderOut(nil)
-        }
+        window?.orderOut(nil)
         statusMessage = "正在后台刷新 DeepSeek 本月用量..."
         let request = URLRequest(
             url: Self.usageURL,
@@ -215,11 +199,6 @@ final class UsageExportAutomationService: NSObject, ObservableObject {
             timeoutInterval: 30
         )
         webView.load(request)
-        if openWindowOnFailure {
-            ensureWindow(with: webView)
-            window?.makeKeyAndOrderFront(nil)
-            NSApp.activate(ignoringOtherApps: true)
-        }
     }
 
     private func ensureWebView() -> WKWebView {
@@ -231,7 +210,6 @@ final class UsageExportAutomationService: NSObject, ObservableObject {
         configuration.websiteDataStore = .default()
         configuration.defaultWebpagePreferences.allowsContentJavaScript = true
         configuration.userContentController.add(self, name: UsageExportScriptMessage.download)
-        configuration.userContentController.add(self, name: UsageExportScriptMessage.clickTrace)
         configuration.userContentController.addUserScript(WKUserScript(
             source: downloadBridgeScript,
             injectionTime: .atDocumentStart,
@@ -424,14 +402,8 @@ final class UsageExportAutomationService: NSObject, ObservableObject {
 
                 if needsLogin {
                     self.isLoggedIn = false
-                    let showWindow = self.shouldShowWindowOnFailure
                     self.resetAutomationState()
-                    self.statusMessage = showWindow
-                        ? "需要先登录 DeepSeek 平台"
-                        : "登录状态已失效，请在设置里手动打开登录页"
-                    if showWindow {
-                        self.openLoginWindow()
-                    }
+                    self.statusMessage = "登录状态已失效，请在设置里手动打开登录页"
                 } else {
                     if self.rangeTriggerRetryCount < 4 {
                         self.rangeTriggerRetryCount += 1
@@ -719,12 +691,8 @@ final class UsageExportAutomationService: NSObject, ObservableObject {
     }
 
     private func finishAutomationFailure(_ message: String) {
-        let showWindow = shouldShowWindowOnFailure
         resetAutomationState()
         statusMessage = message
-        if showWindow {
-            openLoginWindow()
-        }
     }
 
     private func resetAutomationState(cancelDownload: Bool = true) {
@@ -775,21 +743,13 @@ final class UsageExportAutomationService: NSObject, ObservableObject {
         if let downloaded = newestDownloadedUsageFile() {
             lastDownloadFileName = downloaded.lastPathComponent
             statusMessage = "已发现下载文件 \(downloaded.lastPathComponent)，等待自动导入..."
-            shouldShowWindowOnFailure = false
             publishDownloadedFile(downloaded)
             return
         }
 
         if downloadWatchAttempts >= 14 {
-            let showWindow = shouldShowWindowOnFailure
-            let message = showWindow
-                ? "等待本月用量 ZIP 超时，请检查网页登录状态"
-                : "后台导出超时，本次已跳过，不会打断你当前操作"
             resetAutomationState()
-            statusMessage = message
-            if showWindow {
-                openLoginWindow()
-            }
+            statusMessage = "后台导出超时，本次已跳过，不会打断你当前操作"
         }
     }
 
@@ -863,75 +823,6 @@ final class UsageExportAutomationService: NSObject, ObservableObject {
             const safe = (raw || '').trim();
             if (safe) return safe;
             return fallback || 'usage-export.zip';
-          };
-
-          const describeElement = (el) => {
-            if (!el) return null;
-            const text = (el.innerText || el.textContent || '').trim().replace(/\\s+/g, ' ').slice(0, 160);
-            const href = el.href || el.getAttribute && el.getAttribute('href') || '';
-            const cls = el.className && typeof el.className === 'string' ? el.className.slice(0, 160) : '';
-            const role = el.getAttribute && el.getAttribute('role') || '';
-            const aria = el.getAttribute && el.getAttribute('aria-label') || '';
-            const id = el.id || '';
-            const cursor = window.getComputedStyle(el).cursor || '';
-            return {
-              tag: (el.tagName || '').toLowerCase(),
-              text,
-              href,
-              role,
-              ariaLabel: aria,
-              className: cls,
-              id,
-              cursor
-            };
-          };
-
-          const scoreElement = (el) => {
-            if (!el || !el.tagName) return -1;
-            const tag = (el.tagName || '').toLowerCase();
-            const text = (el.innerText || el.textContent || '').trim().toLowerCase();
-            const href = el.href || el.getAttribute && el.getAttribute('href') || '';
-            const role = el.getAttribute && el.getAttribute('role') || '';
-            const aria = el.getAttribute && el.getAttribute('aria-label') || '';
-            const cursor = window.getComputedStyle(el).cursor || '';
-
-            let score = 0;
-            if (tag === 'button') score += 8;
-            if (tag === 'a') score += 6;
-            if (role.toLowerCase() === 'button') score += 6;
-            if (href) score += 4;
-            if (el.hasAttribute && el.hasAttribute('download')) score += 8;
-            if (cursor === 'pointer') score += 3;
-
-            const haystack = [text, href, aria].join(' ').toLowerCase();
-            if (haystack.includes('导出')) score += 10;
-            if (haystack.includes('export')) score += 10;
-            if (haystack.includes('下载')) score += 8;
-            if (haystack.includes('zip')) score += 6;
-            if (haystack.includes('csv')) score += 5;
-            if (haystack.includes('month=')) score += 4;
-            if (haystack.includes('year=')) score += 4;
-
-            return score;
-          };
-
-          const firstElementsFromPath = (event) => {
-            const rawPath = event.composedPath ? event.composedPath() : [];
-            return rawPath.filter((node) => node && node.tagName).slice(0, 8);
-          };
-
-          const bestCandidateFromPath = (path) => {
-            if (!Array.isArray(path) || path.length === 0) return null;
-            let best = null;
-            let bestScore = -1;
-            for (const el of path) {
-              const score = scoreElement(el);
-              if (score > bestScore) {
-                best = el;
-                bestScore = score;
-              }
-            }
-            return best;
           };
 
           const postDataUrl = (filename, dataUrl, taskID) => {
@@ -1008,28 +899,6 @@ final class UsageExportAutomationService: NSObject, ObservableObject {
             const filename = anchor.download || anchor.getAttribute('download') || '';
             return await postDownload(href, filename);
           };
-
-          document.addEventListener('mousedown', (event) => {
-            if (window.__deepseekClickTraceArmed) {
-              window.__deepseekClickTraceArmed = false;
-              const hit = document.elementFromPoint(event.clientX, event.clientY);
-              const path = firstElementsFromPath(event);
-              const target = bestCandidateFromPath([
-                hit,
-                ...(path || []),
-                event.target
-              ].filter(Boolean));
-              window.webkit.messageHandlers.\(UsageExportScriptMessage.clickTrace).postMessage({
-                pointX: event.clientX,
-                pointY: event.clientY,
-                target: describeElement(target),
-                raw: describeElement(event.target),
-                hit: describeElement(hit),
-                path: path.map(describeElement),
-                url: location.href
-              });
-            }
-          }, true);
 
           document.addEventListener('click', (event) => {
             const anchor = event.target && event.target.closest ? event.target.closest('a') : null;
@@ -1185,7 +1054,6 @@ final class UsageExportAutomationService: NSObject, ObservableObject {
             try data.write(to: destination, options: .atomic)
             lastDownloadFileName = finalName
             statusMessage = "已保存下载文件 \(finalName)，等待自动导入..."
-            shouldShowWindowOnFailure = false
             publishDownloadedFile(destination)
         } catch {
             finishAutomationFailure("保存下载文件失败：\(error.localizedDescription)")
@@ -1247,9 +1115,7 @@ extension UsageExportAutomationService: WKNavigationDelegate, WKUIDelegate, WKDo
         if webView.url?.absoluteString.contains("sign_in") == true {
             isLoggedIn = false
             resetAutomationState()
-            statusMessage = shouldShowWindowOnFailure
-                ? "请在打开的窗口中完成登录"
-                : "检测到需要重新登录，自动导出暂停等待手动登录"
+            statusMessage = "检测到需要重新登录，自动导出暂停等待手动登录"
             return
         }
     }
@@ -1358,7 +1224,6 @@ extension UsageExportAutomationService: WKNavigationDelegate, WKUIDelegate, WKDo
         }
 
         statusMessage = "导出下载完成，等待自动导入..."
-        shouldShowWindowOnFailure = false
         publishDownloadedFile(finalDestination, cancelActiveDownload: false)
     }
 
@@ -1399,31 +1264,5 @@ extension UsageExportAutomationService: WKNavigationDelegate, WKUIDelegate, WKDo
             return
         }
 
-        if message.name == UsageExportScriptMessage.clickTrace,
-           let body = message.body as? [String: Any] {
-            let target = body["target"] as? [String: Any]
-            let hit = body["hit"] as? [String: Any]
-            let path = body["path"] as? [[String: Any]] ?? []
-            let url = body["url"] as? String ?? ""
-            let text = (target?["text"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-            let href = (target?["href"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-            let tag = (target?["tag"] as? String) ?? "unknown"
-            let role = (target?["role"] as? String) ?? ""
-            let aria = (target?["ariaLabel"] as? String) ?? ""
-            let hitTag = (hit?["tag"] as? String) ?? "unknown"
-            let hitText = ((hit?["text"] as? String) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-            let pathSummary = path.prefix(4).map { item in
-                let itemTag = (item["tag"] as? String) ?? "unknown"
-                let itemText = ((item["text"] as? String) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-                let itemRole = (item["role"] as? String) ?? ""
-                return "\(itemTag){\(itemText.isEmpty ? "-" : itemText)}[\(itemRole.isEmpty ? "-" : itemRole)]"
-            }.joined(separator: " -> ")
-
-            lastClickTraceSummary = "best=\(tag){\(text.isEmpty ? "-" : text)} href=\(href.isEmpty ? "-" : href) role=\(role.isEmpty ? "-" : role) aria=\(aria.isEmpty ? "-" : aria) | hit=\(hitTag){\(hitText.isEmpty ? "-" : hitText)}"
-            statusMessage = "已捕获网页点击，继续把这条信息发给我就行"
-            if url.isEmpty == false {
-                lastClickTraceSummary = "\(lastClickTraceSummary ?? "") | path=\(pathSummary.isEmpty ? "-" : pathSummary) | page=\(url)"
-            }
-        }
     }
 }
