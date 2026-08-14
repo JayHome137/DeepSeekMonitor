@@ -80,10 +80,6 @@ final class ModelDetailWindowController: NSObject {
         removeDismissMonitors()
     }
 
-    private func layout(panel: NSPanel, nextTo anchorWindow: NSWindow) {
-        layout(panel: panel, anchoredTo: anchorWindow.frame, screen: anchorWindow.screen)
-    }
-
     private func layout(panel: NSPanel, anchoredTo anchorFrame: NSRect, screen: NSScreen?) {
         panel.setContentSize(NSSize(width: Theme.detailPanelWidth, height: Theme.detailPanelHeight))
 

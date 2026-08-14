@@ -8,6 +8,34 @@ enum UsageAutoImportResult {
     case failure(String)
 }
 
+enum UsageDataState: Equatable {
+    case idle
+    case live
+    case imported
+    case importedWithNotice(String)
+    case unavailable(String)
+    case failure(String)
+
+    var isUnavailable: Bool {
+        if case .unavailable = self { return true }
+        return false
+    }
+
+    var failureMessage: String? {
+        guard case .failure(let message) = self else { return nil }
+        return message
+    }
+
+    var noticeMessage: String? {
+        switch self {
+        case .importedWithNotice(let message), .unavailable(let message):
+            return message
+        default:
+            return nil
+        }
+    }
+}
+
 // MARK: - Dashboard ViewModel
 //
 // 核心状态管理层，负责：
@@ -21,8 +49,6 @@ final class DashboardViewModel: ObservableObject {
 
     // MARK: - Published: 余额
 
-    /// 原始余额信息
-    @Published private(set) var balanceInfo: BalanceInfo?
     /// 账户是否可用（余额 > 0）
     @Published private(set) var isAccountAvailable: Bool = false
     /// 总余额（元）
@@ -59,8 +85,8 @@ final class DashboardViewModel: ObservableObject {
     @Published private(set) var isLoading: Bool = false
     /// 错误信息
     @Published private(set) var errorMessage: String?
-    /// 非阻断性提示（例如部分数据接口不可用）
-    @Published private(set) var warningMessage: String?
+    /// 用量数据当前来源与可用状态
+    @Published private(set) var usageDataState: UsageDataState = .idle
     /// 余额 API 上次成功刷新时间
     @Published private(set) var balanceLastUpdated: Date?
     /// 用量文件上次成功导入时间
@@ -70,54 +96,82 @@ final class DashboardViewModel: ObservableObject {
     /// API Key 安全存储或迁移错误
     @Published private(set) var apiKeyStorageError: String?
     /// 面板驻留时间（秒）
-    @Published var panelResidenceSeconds: TimeInterval = UserDefaults.standard.double(forKey: "panel_residence_seconds") {
+    @Published var panelResidenceSeconds: TimeInterval = 10 {
         didSet {
             let normalized = Self.normalizedPanelResidence(panelResidenceSeconds)
             if normalized != panelResidenceSeconds {
                 panelResidenceSeconds = normalized
                 return
             }
-            UserDefaults.standard.set(normalized, forKey: "panel_residence_seconds")
+            preferences.set(normalized, forKey: Self.panelResidenceKey)
         }
     }
     /// 是否启用系统原生 WidgetKit 小组件数据
-    @Published var isNativeWidgetEnabled: Bool = LocalCache.shared.isNativeWidgetEnabled {
+    @Published var isNativeWidgetEnabled: Bool = true {
         didSet {
-            LocalCache.shared.setNativeWidgetEnabled(isNativeWidgetEnabled)
+            cache.setNativeWidgetEnabled(isNativeWidgetEnabled)
         }
     }
 
     // MARK: - Configuration
 
     /// 自动刷新间隔（秒），默认 60 秒
-    var refreshInterval: TimeInterval = 60 {
-        didSet { restartTimer() }
+    @Published var refreshInterval: TimeInterval = 60 {
+        didSet {
+            let normalized = Self.normalizedRefreshInterval(refreshInterval)
+            if normalized != refreshInterval {
+                refreshInterval = normalized
+                return
+            }
+            preferences.set(normalized, forKey: Self.refreshIntervalKey)
+            restartTimer()
+        }
     }
 
     /// 用量查询回溯天数
-    var usageLookbackDays: Int = 7
+    let usageLookbackDays = 7
 
     // MARK: - Private
 
-    private let service = DeepSeekService.shared
+    private static let panelResidenceKey = "panel_residence_seconds"
+    private static let refreshIntervalKey = "balance_refresh_interval_seconds"
+
+    private let service: DeepSeekServicing
+    private let cache: LocalCache
+    private let preferences: UserDefaults
     private var timer: Timer?
     private var importMonitors: [DirectoryChangeMonitor] = []
     private var importDebounceWorkItem: DispatchWorkItem?
     private var isRefreshing = false
     private var lastBalanceResponse: BalanceResponse?
+    private var usageEndpointUnavailableForSession = false
 
     // MARK: - Init
 
-    init() {
-        panelResidenceSeconds = Self.normalizedPanelResidence(panelResidenceSeconds)
+    init(
+        service: DeepSeekServicing = DeepSeekService.shared,
+        cache: LocalCache = .shared,
+        preferences: UserDefaults = .standard
+    ) {
+        self.service = service
+        self.cache = cache
+        self.preferences = preferences
+
+        panelResidenceSeconds = Self.normalizedPanelResidence(
+            preferences.double(forKey: Self.panelResidenceKey)
+        )
+        refreshInterval = Self.normalizedRefreshInterval(
+            preferences.double(forKey: Self.refreshIntervalKey)
+        )
+        isNativeWidgetEnabled = cache.isNativeWidgetEnabled
         hasAPIKey = service.hasAPIKey
         apiKeyStorageError = service.apiKeyStorageWarning
-        let cachedRecords = LocalCache.shared.loadUsageRecords()
+        let cachedRecords = cache.loadUsageRecords()
         if cachedRecords.isEmpty {
-            UsageAutoImportService.resetRememberedImport()
+            UsageAutoImportService.resetRememberedImport(defaults: preferences)
         } else if cachedRecords.contains(where: { $0.totalTokens > 0 }) &&
                     cachedRecords.allSatisfy({ $0.requestCount == 0 }) {
-            UsageAutoImportService.resetRememberedImport()
+            UsageAutoImportService.resetRememberedImport(defaults: preferences)
         }
         loadCachedData()
     }
@@ -204,55 +258,41 @@ final class DashboardViewModel: ObservableObject {
         return allowed.contains(value) ? value : 10
     }
 
+    private static func normalizedRefreshInterval(_ value: TimeInterval) -> TimeInterval {
+        let allowed: [TimeInterval] = [30, 60, 120, 300]
+        return allowed.contains(value) ? value : 60
+    }
+
     // MARK: - Refresh
 
     /// 手动刷新数据
     func refresh() async {
         // 防止并发刷新
         guard !isRefreshing else { return }
-        defer { isRefreshing = false }
         isRefreshing = true
+        defer {
+            isRefreshing = false
+            isLoading = false
+        }
 
         // 没有 API Key 时不请求
         guard hasAPIKey else {
             errorMessage = "请先配置 API Key"
-            warningMessage = nil
             return
         }
 
         isLoading = true
         errorMessage = nil
-        warningMessage = nil
 
         do {
-            // 并行请求余额 + 用量
-            async let balanceTask = try service.fetchBalance()
-            async let usageTask = try service.fetchRecentUsage(days: usageLookbackDays)
-
-            let balanceResp = try await balanceTask
+            let balanceResp = try await service.fetchBalance()
 
             // ── 更新余额 ──
             lastBalanceResponse = balanceResp
             applyBalanceResponse(balanceResp)
             balanceLastUpdated = Date()
 
-            do {
-                let usageResp = try await usageTask
-
-                // ── 更新用量、费用和趋势 ──
-                let recentRange = UsageAutoImportService.expectedRecentExportRange(
-                    timeZone: usageTimeZone
-                )
-                let mergedRecords = LocalCache.shared.mergeUsageRecords(
-                    usageResp.data,
-                    replacing: recentRange,
-                    timeZone: usageTimeZone
-                )
-                applyUsageRecords(mergedRecords)
-                usageLastUpdated = Date()
-            } catch {
-                handleUsageFailure(error)
-            }
+            await refreshUsageIfSupported()
 
             // ── 持久化到本地缓存 ──
             saveCache()
@@ -263,22 +303,57 @@ final class DashboardViewModel: ObservableObject {
             errorMessage = error.localizedDescription
         }
 
-        isLoading = false
+    }
+
+    private func refreshUsageIfSupported() async {
+        guard usageEndpointUnavailableForSession == false else { return }
+
+        do {
+            let usageResp = try await service.fetchRecentUsage(days: usageLookbackDays)
+            let recentRange = UsageAutoImportService.expectedRecentExportRange(
+                timeZone: usageTimeZone
+            )
+            let mergedRecords = cache.mergeUsageRecords(
+                usageResp.data,
+                replacing: recentRange,
+                timeZone: usageTimeZone
+            )
+            applyUsageRecords(mergedRecords)
+            usageDataState = .live
+            usageLastUpdated = Date()
+        } catch {
+            handleUsageFailure(error)
+        }
     }
 
     // MARK: - API Key
 
-    /// 设置 API Key 并立即刷新
-    func setAPIKey(_ key: String) throws {
+    /// 先验证候选 Key，成功后才写入钥匙串并更新余额。
+    @discardableResult
+    func validateAndSaveAPIKey(_ key: String) async throws -> BalanceResponse {
+        let candidate = key.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard candidate.isEmpty == false else {
+            throw APIKeyStorageError.emptyAPIKey
+        }
+
+        let balanceResponse = try await service.validateAPIKey(candidate)
+
         do {
-            try service.saveAPIKey(key)
+            try service.saveAPIKey(candidate)
         } catch {
             apiKeyStorageError = error.localizedDescription
             throw error
         }
+
         hasAPIKey = true
         apiKeyStorageError = nil
-        Task { await refresh() }
+        usageEndpointUnavailableForSession = false
+        lastBalanceResponse = balanceResponse
+        applyBalanceResponse(balanceResponse)
+        balanceLastUpdated = Date()
+        errorMessage = nil
+        saveCache()
+        return balanceResponse
     }
 
     /// 清除 API Key 并重置状态
@@ -291,13 +366,23 @@ final class DashboardViewModel: ObservableObject {
         }
         hasAPIKey = false
         apiKeyStorageError = nil
+        usageEndpointUnavailableForSession = false
 
         // 清除本地缓存
-        LocalCache.shared.clearAll()
-        UsageAutoImportService.resetRememberedImport()
+        cache.clearAll()
+        UsageAutoImportService.resetRememberedImport(defaults: preferences)
 
-        // 重置所有数据
-        balanceInfo = nil
+        resetDisplayedData()
+    }
+
+    /// 清除业务缓存，但保留钥匙串中的 API Key 与用户设置。
+    func clearCachedData() {
+        cache.clearAll()
+        UsageAutoImportService.resetRememberedImport(defaults: preferences)
+        resetDisplayedData()
+    }
+
+    private func resetDisplayedData() {
         isAccountAvailable = false
         totalBalance = 0
         grantedBalance = 0
@@ -314,21 +399,8 @@ final class DashboardViewModel: ObservableObject {
         balanceLastUpdated = nil
         usageLastUpdated = nil
         errorMessage = nil
-        warningMessage = nil
+        usageDataState = .idle
         lastBalanceResponse = nil
-    }
-
-    func importUsageCSV(
-        from url: URL,
-        costURL: URL? = nil,
-        replacing range: UsageAutoImportService.ExportDateRange? = nil
-    ) throws {
-        let result = try UsageCSVImporter.importResult(
-            from: url,
-            costURL: costURL,
-            defaultCurrencyCode: balanceCurrencyCode
-        )
-        try applyImportedUsage(result, replacing: range)
     }
 
     @discardableResult
@@ -341,6 +413,13 @@ final class DashboardViewModel: ObservableObject {
     func importAutomaticUsageExport(_ event: UsageExportDownloadEvent) -> UsageAutoImportResult {
         var candidate: UsageAutoImportService.ImportCandidate?
         do {
+            let fingerprint = try UsageAutoImportService.importFingerprint(for: event.fileURL)
+            guard UsageAutoImportService.hasImported(
+                fingerprint,
+                defaults: preferences
+            ) == false else {
+                return .noNewFile
+            }
             let prepared = try UsageAutoImportService.prepareImportCandidate(from: event.fileURL)
             candidate = prepared
             let fileNames = try importUsageCandidate(
@@ -352,9 +431,10 @@ final class DashboardViewModel: ObservableObject {
             return .success(fileNames)
         } catch {
             let sourceName = candidate?.sourceName ?? event.fileURL.lastPathComponent
-            try? FileManager.default.removeItem(at: event.fileURL)
-            let message = "自动导入 \(sourceName) 失败：\(error.localizedDescription)"
-            warningMessage = message
+            let retainedFile = try? UsageAutoImportService.quarantineFailedImport(event.fileURL)
+            let retainedSuffix = retainedFile == nil ? "" : "，文件已保留到 failed 目录"
+            let message = "自动导入 \(sourceName) 失败：\(error.localizedDescription)\(retainedSuffix)"
+            usageDataState = .failure(message)
             UsageExportAutomationService.shared.reportImportFailure(error.localizedDescription)
             return .failure(message)
         }
@@ -370,15 +450,21 @@ final class DashboardViewModel: ObservableObject {
             defaultCurrencyCode: balanceCurrencyCode
         )
         let importTimeZone = result.timeZone ?? usageTimeZone
+        let resolvedRange = try UsageAutoImportService.resolvedExportDateRange(
+            candidate.exportDateRange,
+            records: result.records,
+            fileNameEndDateIsInclusive: result.fileNameEndDateIsInclusive
+        )
         if let automaticReferenceDate {
             try UsageAutoImportService.validateAutomaticExport(
                 candidate,
+                exportDateRange: resolvedRange,
                 referenceDate: automaticReferenceDate,
                 timeZone: importTimeZone
             )
         }
-        try applyImportedUsage(result, replacing: candidate.exportDateRange)
-        UsageAutoImportService.markImported(candidate.fingerprint)
+        try applyImportedUsage(result, replacing: resolvedRange)
+        UsageAutoImportService.markImported(candidate.fingerprint, defaults: preferences)
         return candidate.selectedCSVNames
     }
 
@@ -388,18 +474,18 @@ final class DashboardViewModel: ObservableObject {
     ) throws {
         try UsageAutoImportService.validateRecords(result.records, within: range)
         let importTimeZone = result.timeZone ?? usageTimeZone
-        let mergedRecords = LocalCache.shared.mergeUsageRecords(
+        let mergedRecords = cache.mergeUsageRecords(
             result.records,
             replacing: range,
             timeZone: importTimeZone
         )
         if let secondsFromGMT = result.timeZoneSecondsFromGMT {
-            LocalCache.shared.saveUsageTimeZone(secondsFromGMT: secondsFromGMT)
+            cache.saveUsageTimeZone(secondsFromGMT: secondsFromGMT)
         }
         applyUsageRecords(mergedRecords)
-        warningMessage = LocalCache.shared.needsCurrentMonthBaseline(timeZone: importTimeZone)
-            ? "近 7 日用量已更新，本月历史仍需导入完整的本月 ZIP"
-            : "已显示导入的用量记录"
+        usageDataState = cache.needsCurrentMonthBaseline(timeZone: importTimeZone)
+            ? .importedWithNotice("近 7 日用量已更新，本月历史仍需同步完整的本月 ZIP")
+            : .imported
         usageLastUpdated = Date()
         saveCache()
     }
@@ -408,7 +494,9 @@ final class DashboardViewModel: ObservableObject {
     func autoImportUsageIfNeeded() -> UsageAutoImportResult {
         var activeCandidate: UsageAutoImportService.ImportCandidate?
         do {
-            guard let candidate = try UsageAutoImportService.nextImportCandidate() else {
+            guard let candidate = try UsageAutoImportService.nextImportCandidate(
+                defaults: preferences
+            ) else {
                 return .noNewFile
             }
             activeCandidate = candidate
@@ -420,11 +508,13 @@ final class DashboardViewModel: ObservableObject {
             let message: String
             if let candidate = activeCandidate {
                 let selectedNames = candidate.selectedCSVNames.joined(separator: " + ")
-                message = "自动导入 \(candidate.sourceName) -> \(selectedNames) 失败：\(error.localizedDescription)"
+                let retainedFile = try? UsageAutoImportService.quarantineFailedImport(candidate.sourceURL)
+                let retainedSuffix = retainedFile == nil ? "" : "，文件已保留到 failed 目录"
+                message = "自动导入 \(candidate.sourceName) -> \(selectedNames) 失败：\(error.localizedDescription)\(retainedSuffix)"
             } else {
                 message = "自动导入用量失败：\(error.localizedDescription)"
             }
-            warningMessage = message
+            usageDataState = .failure(message)
             UsageExportAutomationService.shared.reportImportFailure(error.localizedDescription)
             return .failure(message)
         }
@@ -437,40 +527,29 @@ final class DashboardViewModel: ObservableObject {
         (flashUsage?.totalTokens ?? 0) + (proUsage?.totalTokens ?? 0)
     }
 
-    /// 总费用（所有模型合计，单位：元）
-    var totalCost: Double {
-        let amount = (flashUsage?.costAmount ?? .zero) + (proUsage?.costAmount ?? .zero)
-        return NSDecimalNumber(decimal: amount).doubleValue
-    }
-
-    var currentMonthCostFormatted: String {
-        formattedCurrency(currentMonthCost, currencyCode: usageCurrencyCode)
-    }
-
     var usageTimeZone: TimeZone {
-        LocalCache.shared.usageTimeZone
+        cache.usageTimeZone
+    }
+
+    var apiKey: String? {
+        service.apiKey
     }
 
     var lastUpdated: Date? {
         [balanceLastUpdated, usageLastUpdated].compactMap { $0 }.max()
     }
 
-    /// 用量上次更新时间的格式化文本
-    var lastUpdatedFormatted: String {
-        guard let date = usageLastUpdated else { return "尚未导入用量" }
-        let fmt = DateFormatter()
-        fmt.dateFormat = "HH:mm:ss"
-        return fmt.string(from: date)
-    }
-
-    /// 是否正在显示错误
-    var hasError: Bool {
-        errorMessage != nil
-    }
-
     /// DeepSeek 公开 API 当前是否不支持用量查询
     var isUsageUnavailable: Bool {
-        warningMessage == APIError.usageEndpointUnavailable.errorDescription
+        usageDataState.isUnavailable
+    }
+
+    var usageFailureMessage: String? {
+        usageDataState.failureMessage
+    }
+
+    var usageNoticeMessage: String? {
+        usageDataState.noticeMessage
     }
 
     // MARK: - Chart Data
@@ -611,42 +690,46 @@ final class DashboardViewModel: ObservableObject {
     }
 
     private func restoreImportedUsageIfAvailable(unavailableMessage: String) -> Bool {
-        let cachedRecords = LocalCache.shared.loadUsageRecords()
+        let cachedRecords = cache.loadUsageRecords()
         guard cachedRecords.isEmpty == false else { return false }
 
         applyUsageRecords(cachedRecords)
-        warningMessage = "\(unavailableMessage)，已显示导入的 CSV 记录"
+        usageDataState = .importedWithNotice(
+            "\(unavailableMessage)，已显示导入的 CSV 记录"
+        )
         return true
     }
 
     private func handleUsageFailure(_ error: Error) {
         if let apiError = error as? APIError,
            case .usageEndpointUnavailable = apiError {
-            if restoreImportedUsageIfAvailable(unavailableMessage: apiError.errorDescription ?? "实时用量不可用") == false {
+            usageEndpointUnavailableForSession = true
+            let message = apiError.errorDescription ?? "实时用量不可用"
+            if restoreImportedUsageIfAvailable(unavailableMessage: message) == false {
                 clearUsageData()
-                warningMessage = apiError.errorDescription
+                usageDataState = .unavailable(message)
             }
             return
         }
 
         if let apiError = error as? APIError {
             if restoreImportedUsageIfAvailable(unavailableMessage: "实时用量同步失败") == false {
-                warningMessage = "用量同步失败：\(apiError.errorDescription ?? "未知错误")"
+                usageDataState = .failure("用量同步失败：\(apiError.errorDescription ?? "未知错误")")
             }
         } else {
             if restoreImportedUsageIfAvailable(unavailableMessage: "实时用量同步失败") == false {
-                warningMessage = "用量同步失败：\(error.localizedDescription)"
+                usageDataState = .failure("用量同步失败：\(error.localizedDescription)")
             }
         }
     }
 
     func loadImportedUsageIfAvailable() {
-        let cachedRecords = LocalCache.shared.loadUsageRecords()
+        let cachedRecords = cache.loadUsageRecords()
         guard cachedRecords.isEmpty == false else { return }
 
         applyUsageRecords(cachedRecords)
-        if warningMessage == nil, totalTokens > 0 {
-            warningMessage = "已显示从 CSV 导入的用量记录"
+        if totalTokens > 0 {
+            usageDataState = .imported
         }
     }
 
@@ -654,7 +737,7 @@ final class DashboardViewModel: ObservableObject {
 
     /// 从本地缓存恢复数据（App 冷启动时调用）
     private func loadCachedData() {
-        guard let cached = LocalCache.shared.loadDashboard() else { return }
+        guard let cached = cache.loadDashboard() else { return }
 
         isAccountAvailable = cached.isAccountAvailable
         totalBalance = cached.totalBalance
@@ -717,7 +800,7 @@ final class DashboardViewModel: ObservableObject {
             lastUpdated: lastUpdated ?? Date()
         )
 
-        LocalCache.shared.saveDashboard(cache)
+        self.cache.saveDashboard(cache)
     }
 
     private func summary(for records: [UsageRecord], model: DeepSeekModel) -> ModelUsageSummary? {
@@ -800,7 +883,6 @@ final class DashboardViewModel: ObservableObject {
 
     private func applyBalanceResponse(_ response: BalanceResponse) {
         guard let info = response.preferredBalanceInfo(matching: usageCurrencyCode) else { return }
-        balanceInfo = info
         isAccountAvailable = response.isAvailable
         totalBalance = Double(info.totalBalance) ?? 0
         grantedBalance = Double(info.grantedBalance) ?? 0

@@ -45,6 +45,7 @@ enum UsageCSVImportError: LocalizedError {
 struct UsageCSVImportResult {
     let records: [UsageRecord]
     let timeZoneSecondsFromGMT: Int?
+    let fileNameEndDateIsInclusive: Bool
 
     var timeZone: TimeZone? {
         timeZoneSecondsFromGMT.flatMap(TimeZone.init(secondsFromGMT:))
@@ -76,7 +77,8 @@ enum UsageCSVImporter {
         guard let costURL else {
             return UsageCSVImportResult(
                 records: amount.records,
-                timeZoneSecondsFromGMT: amount.timeZoneSecondsFromGMT
+                timeZoneSecondsFromGMT: amount.timeZoneSecondsFromGMT,
+                fileNameEndDateIsInclusive: amount.fileNameEndDateIsInclusive
             )
         }
 
@@ -90,7 +92,8 @@ enum UsageCSVImporter {
         }
         return UsageCSVImportResult(
             records: merge(amountRecords: amount.records, exactCosts: cost.costs),
-            timeZoneSecondsFromGMT: amount.timeZoneSecondsFromGMT ?? cost.timeZoneSecondsFromGMT
+            timeZoneSecondsFromGMT: amount.timeZoneSecondsFromGMT ?? cost.timeZoneSecondsFromGMT,
+            fileNameEndDateIsInclusive: amount.fileNameEndDateIsInclusive
         )
     }
 
@@ -98,6 +101,7 @@ enum UsageCSVImporter {
         let records: [UsageRecord]
         let timeZoneSecondsFromGMT: Int?
         let timeZoneOffsetsByDate: [String: Int]
+        let fileNameEndDateIsInclusive: Bool
     }
 
     private struct ParsedCosts {
@@ -200,7 +204,8 @@ enum UsageCSVImporter {
         return ParsedRecords(
             records: records,
             timeZoneSecondsFromGMT: nil,
-            timeZoneOffsetsByDate: [:]
+            timeZoneOffsetsByDate: [:],
+            fileNameEndDateIsInclusive: false
         )
     }
 
@@ -214,6 +219,17 @@ enum UsageCSVImporter {
                 return timeZoneSecondsFromGMT
             case .interval:
                 return nil
+            }
+        }
+
+        var fileNameEndDateIsInclusive: Bool {
+            // Current ISO interval exports name the selected final calendar day;
+            // legacy utc_date exports used an exclusive filename boundary.
+            switch self {
+            case .legacy:
+                return false
+            case .interval:
+                return true
             }
         }
     }
@@ -372,7 +388,8 @@ enum UsageCSVImporter {
         return ParsedRecords(
             records: records,
             timeZoneSecondsFromGMT: dateColumns.timeZoneSecondsFromGMT ?? latestTimeZone?.secondsFromGMT,
-            timeZoneOffsetsByDate: timeZoneOffsetsByDate
+            timeZoneOffsetsByDate: timeZoneOffsetsByDate,
+            fileNameEndDateIsInclusive: dateColumns.fileNameEndDateIsInclusive
         )
     }
 

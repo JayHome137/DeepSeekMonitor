@@ -10,11 +10,8 @@ struct WidgetSnapshot: Decodable {
     let usageCurrencyCode: String
     let currentDayCost: Double
     let currentMonthCost: Double
-    let flashTotalTokens: Int
     let flashCostInCents: Int
-    let proTotalTokens: Int
     let proCostInCents: Int
-    let balanceUpdatedAt: Date
     let usageUpdatedAt: Date
     let lastUpdated: Date
 
@@ -26,11 +23,8 @@ struct WidgetSnapshot: Decodable {
         case usageCurrencyCode
         case currentDayCost
         case currentMonthCost
-        case flashTotalTokens
         case flashCostInCents
-        case proTotalTokens
         case proCostInCents
-        case balanceUpdatedAt
         case usageUpdatedAt
         case lastUpdated
     }
@@ -44,12 +38,9 @@ struct WidgetSnapshot: Decodable {
         usageCurrencyCode = try container.decodeIfPresent(String.self, forKey: .usageCurrencyCode) ?? balanceCurrencyCode
         currentDayCost = try container.decode(Double.self, forKey: .currentDayCost)
         currentMonthCost = try container.decode(Double.self, forKey: .currentMonthCost)
-        flashTotalTokens = try container.decode(Int.self, forKey: .flashTotalTokens)
         flashCostInCents = try container.decode(Int.self, forKey: .flashCostInCents)
-        proTotalTokens = try container.decode(Int.self, forKey: .proTotalTokens)
         proCostInCents = try container.decode(Int.self, forKey: .proCostInCents)
         lastUpdated = try container.decode(Date.self, forKey: .lastUpdated)
-        balanceUpdatedAt = try container.decodeIfPresent(Date.self, forKey: .balanceUpdatedAt) ?? lastUpdated
         usageUpdatedAt = try container.decodeIfPresent(Date.self, forKey: .usageUpdatedAt) ?? lastUpdated
     }
 }
@@ -65,9 +56,7 @@ struct WidgetEntry: TimelineEntry {
     let usageCurrencyCode: String
     let dayCost: Double
     let monthCost: Double
-    let flashTokens: Int
     let flashCostCents: Int
-    let proTokens: Int
     let proCostCents: Int
     let usageUpdatedAt: Date
     let hasData: Bool
@@ -81,9 +70,7 @@ struct WidgetEntry: TimelineEntry {
         usageCurrencyCode: "CNY",
         dayCost: 0,
         monthCost: 0,
-        flashTokens: 0,
         flashCostCents: 0,
-        proTokens: 0,
         proCostCents: 0,
         usageUpdatedAt: Date(),
         hasData: false
@@ -141,9 +128,7 @@ struct Provider: TimelineProvider {
                 usageCurrencyCode: "CNY",
                 dayCost: 0,
                 monthCost: 0,
-                flashTokens: 0,
                 flashCostCents: 0,
-                proTokens: 0,
                 proCostCents: 0,
                 usageUpdatedAt: Date(),
                 hasData: false
@@ -162,9 +147,7 @@ struct Provider: TimelineProvider {
             usageCurrencyCode: s.usageCurrencyCode,
             dayCost: s.currentDayCost,
             monthCost: s.currentMonthCost,
-            flashTokens: s.flashTotalTokens,
             flashCostCents: s.flashCostInCents,
-            proTokens: s.proTotalTokens,
             proCostCents: s.proCostInCents,
             usageUpdatedAt: s.usageUpdatedAt,
             hasData: true

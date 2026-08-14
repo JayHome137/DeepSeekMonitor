@@ -6,7 +6,6 @@ Packages/
 *.swo
 
 # Xcode
-*.xcodeproj/
 *.xcworkspace/
 xcuserdata/
 DerivedData/

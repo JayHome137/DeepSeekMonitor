@@ -20,6 +20,7 @@ struct SettingsView: View {
     @State private var isVerifying = false
     @State private var verifyStatus: VerifyStatus = .idle
     @State private var usageImportStatus: UsageImportStatus = .idle
+    @State private var cacheStatusMessage: String?
     @State private var scrollResetToken = 0
     @State private var isLaunchAtLogin = false
 
@@ -57,7 +58,6 @@ struct SettingsView: View {
 
     enum UsageImportStatus: Equatable {
         case idle
-        case info(String)
         case success(String)
         case failure(String)
     }
@@ -113,13 +113,14 @@ struct SettingsView: View {
         .background(.ultraThinMaterial)
         .onAppear {
             // 重新打开设置时回填已保存的 Key，避免重复输入
-            apiKeyInput = DeepSeekService.shared.apiKey ?? ""
+            apiKeyInput = viewModel.apiKey ?? ""
             if let storageError = viewModel.apiKeyStorageError {
                 verifyStatus = .failure(storageError)
             } else {
                 verifyStatus = .idle
             }
             usageImportStatus = .idle
+            cacheStatusMessage = nil
             isLaunchAtLogin = SMAppService.mainApp.status == .enabled
             scrollResetToken += 1
         }
@@ -372,7 +373,7 @@ struct SettingsView: View {
         }
     }
 
-    // MARK: - Cache
+    // MARK: - Usage Import
 
     private var usageImportSection: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -380,24 +381,15 @@ struct SettingsView: View {
                 .font(.subheadline)
                 .fontWeight(.medium)
 
-            Text("实时用量接口暂未开放。自动网页导出的文件会先进入 App 的专用导入目录，并在检测到新文件后自动解压导入。手动选择支持官方本月、近 7 天和近 30 天 ZIP。")
+            Text("自动网页导出是主要同步方式。手动导入用于登录失效、网页结构变化或补录历史数据，支持官方本月、近 7 天和近 30 天 ZIP/CSV。")
                 .font(.caption)
                 .foregroundStyle(.secondary)
 
             HStack(spacing: 10) {
-                Button(action: triggerAutoScan) {
-                    HStack(spacing: 4) {
-                        Image(systemName: "arrow.triangle.2.circlepath")
-                        Text("立即扫描导入目录")
-                    }
-                    .font(.caption)
-                }
-                .buttonStyle(.bordered)
-
                 Button(action: importUsageExport) {
                     HStack(spacing: 4) {
                         Image(systemName: "square.and.arrow.down")
-                        Text("导入 Usage ZIP/CSV")
+                        Text("手动导入（故障兜底）")
                     }
                     .font(.caption)
                 }
@@ -411,38 +403,25 @@ struct SettingsView: View {
                 }
             }
 
-            VStack(alignment: .leading, spacing: 6) {
-                Text("专用导入目录")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-
-                HStack(alignment: .top, spacing: 8) {
-                    Text(importFolderPath)
+            DisclosureGroup("故障排查") {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("自动导入失败的文件会保留在 failed 子目录，不会被直接删除。")
                         .font(.caption2)
                         .foregroundStyle(.tertiary)
-                        .textSelection(.enabled)
-                        .lineLimit(3)
-
-                    Spacer(minLength: 0)
 
                     Button(action: openImportFolder) {
-                        HStack(spacing: 4) {
-                            Image(systemName: "folder")
-                            Text("打开文件夹")
-                        }
-                        .font(.caption)
+                        Label("打开导入目录", systemImage: "folder")
+                            .font(.caption)
                     }
                     .buttonStyle(.bordered)
                 }
+                .padding(.top, 6)
             }
+            .font(.caption)
 
             switch usageImportStatus {
             case .idle:
                 EmptyView()
-            case .info(let message):
-                Label(message, systemImage: "info.circle.fill")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
             case .success(let message):
                 Label(message, systemImage: "checkmark.circle.fill")
                     .font(.caption)
@@ -526,13 +505,6 @@ struct SettingsView: View {
                     .foregroundStyle(.tertiary)
             }
 
-            if let trace = exportAutomation.lastClickTraceSummary {
-                Text("最近点击: \(trace)")
-                    .font(.caption2)
-                    .foregroundStyle(.tertiary)
-                    .textSelection(.enabled)
-                    .lineLimit(4)
-            }
         }
     }
 
@@ -564,7 +536,7 @@ struct SettingsView: View {
 
             HStack(spacing: 12) {
                 Button(action: {
-                    clearSavedAPIKey()
+                    clearCachedData()
                 }) {
                     HStack(spacing: 4) {
                         Image(systemName: "trash")
@@ -585,6 +557,12 @@ struct SettingsView: View {
                 }
                 .font(.caption2)
                 .foregroundStyle(.tertiary)
+            }
+
+            if let cacheStatusMessage {
+                Label(cacheStatusMessage, systemImage: "checkmark.circle.fill")
+                    .font(.caption)
+                    .foregroundStyle(.green)
             }
         }
     }
@@ -618,30 +596,19 @@ struct SettingsView: View {
         isVerifying = true
         verifyStatus = .verifying
 
-        do {
-            try viewModel.setAPIKey(apiKeyInput)
-        } catch {
-            verifyStatus = .failure(error.localizedDescription)
-            isVerifying = false
-            return
-        }
-
-        // 验证：发起一次余额查询
         Task {
+            defer { isVerifying = false }
             do {
-                let service = DeepSeekService.shared
-                let balance = try await service.fetchBalance()
+                let balance = try await viewModel.validateAndSaveAPIKey(apiKeyInput)
                 let info = balance.preferredBalanceInfo
                 let balanceValue = Double(info?.totalBalance ?? "") ?? 0
                 let currencyCode = normalizedCurrencyCode(info?.currency ?? "CNY")
                 verifyStatus = .success("验证成功，当前余额: \(formattedCurrency(balanceValue, currencyCode: currencyCode))")
-                isVerifying = false
+                apiKeyInput = apiKeyInput.trimmingCharacters(in: .whitespacesAndNewlines)
             } catch let error as APIError {
                 verifyStatus = .failure(error.errorDescription ?? "未知错误")
-                isVerifying = false
             } catch {
                 verifyStatus = .failure(error.localizedDescription)
-                isVerifying = false
             }
         }
     }
@@ -655,6 +622,12 @@ struct SettingsView: View {
         } catch {
             verifyStatus = .failure(error.localizedDescription)
         }
+    }
+
+    private func clearCachedData() {
+        viewModel.clearCachedData()
+        usageImportStatus = .idle
+        cacheStatusMessage = "缓存已清空，API Key 已保留"
     }
 
     private func importUsageExport() {
@@ -676,29 +649,6 @@ struct SettingsView: View {
         } catch {
             usageImportStatus = .failure(error.localizedDescription)
         }
-    }
-
-    private func triggerAutoScan() {
-        switch viewModel.autoImportUsageIfNeeded() {
-        case .success(let fileNames):
-            usageImportStatus = .success("导入成功：\(fileNames.joined(separator: " + "))")
-        case .failure(let message):
-            usageImportStatus = .failure(message)
-        case .noNewFile:
-            usageImportStatus = .info("已检查专用导入目录，当前没有新文件")
-        }
-    }
-
-    private var importFolderPath: String {
-        guard let path = try? UsageAutoImportService.incomingFolderURL().path else {
-            return "无法读取目录路径"
-        }
-
-        let homePath = NSHomeDirectory()
-        if path.hasPrefix(homePath) {
-            return "~" + path.dropFirst(homePath.count)
-        }
-        return path
     }
 
     private func openImportFolder() {

@@ -13,11 +13,18 @@ final class LocalCache {
     static let shared = LocalCache()
 
     private let defaults: UserDefaults
+    private let sharedDefaults: UserDefaults?
     private let encoder = JSONEncoder()
     private let decoder = JSONDecoder()
 
-    init(defaults: UserDefaults = .standard) {
+    init(
+        defaults: UserDefaults = .standard,
+        sharedDefaults: UserDefaults? = UserDefaults(
+            suiteName: "N5YV5FV235.group.com.deepseek.monitor"
+        )
+    ) {
         self.defaults = defaults
+        self.sharedDefaults = sharedDefaults
     }
 
     private enum Keys {
@@ -31,10 +38,6 @@ final class LocalCache {
     }
 
     private static let currentUsageHistorySchemaVersion = 3
-
-    private var sharedDefaults: UserDefaults? {
-        UserDefaults(suiteName: "N5YV5FV235.group.com.deepseek.monitor")
-    }
 
     // MARK: - Dashboard Snapshot
 
@@ -51,11 +54,6 @@ final class LocalCache {
     func loadDashboard() -> DashboardCache? {
         guard let data = defaults.data(forKey: Keys.dashboard) else { return nil }
         return try? decoder.decode(DashboardCache.self, from: data)
-    }
-
-    /// 是否有缓存
-    var hasCachedDashboard: Bool {
-        defaults.data(forKey: Keys.dashboard) != nil
     }
 
     // MARK: - Usage History (本月明细 + 最近 7 天)
@@ -207,6 +205,9 @@ final class LocalCache {
         defaults.removeObject(forKey: Keys.usageHistorySchemaVersion)
         defaults.removeObject(forKey: Keys.usageBaselineMonth)
         defaults.removeObject(forKey: Keys.usageTimeZoneSecondsFromGMT)
+        sharedDefaults?.removeObject(forKey: Keys.widgetSnapshot)
+        sharedDefaults?.synchronize()
+        WidgetCenter.shared.reloadTimelines(ofKind: "com.deepseek.monitor.widget")
     }
 
     // MARK: - Native Widget
@@ -239,11 +240,8 @@ final class LocalCache {
             usageCurrencyCode: dashboard.usageCurrencyCode,
             currentDayCost: dashboard.currentDayCost,
             currentMonthCost: dashboard.currentMonthCost,
-            flashTotalTokens: dashboard.flashTotalTokens,
             flashCostInCents: dashboard.flashCostInCents,
-            proTotalTokens: dashboard.proTotalTokens,
             proCostInCents: dashboard.proCostInCents,
-            balanceUpdatedAt: dashboard.balanceLastUpdated ?? dashboard.lastUpdated,
             usageUpdatedAt: dashboard.usageLastUpdated ?? dashboard.lastUpdated,
             lastUpdated: dashboard.lastUpdated
         )

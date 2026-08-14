@@ -6,7 +6,6 @@
 #   ./build.sh           # Release 构建 + DMG
 #   ./build.sh debug     # Debug 构建
 #   ./build.sh run       # 构建并运行
-#   ./build.sh clean     # 清理构建产物
 #
 
 set -e
@@ -18,7 +17,7 @@ WIDGET_APPEX="WidgetSupport.appex"
 APP_BUNDLE_ID="com.deepseek.monitor"
 WIDGET_BUNDLE_ID="com.deepseek.monitor.widget"
 TEAM_ID="N5YV5FV235"
-MARKETING_VERSION="1.4.11"
+MARKETING_VERSION="1.5.0"
 
 # 颜色输出
 RED='\033[0;31m'
@@ -40,10 +39,6 @@ increment_build() {
     /usr/libexec/PlistBuddy -c "Set CFBundleVersion $next" "$plist" 2>/dev/null || true
     /usr/libexec/PlistBuddy -c "Set CFBundleVersion $next" "$widget_plist" 2>/dev/null || true
     info "内部 Build 版本号: $next"
-}
-
-current_build_version() {
-    /usr/libexec/PlistBuddy -c "Print CFBundleVersion" "Resources/Info.plist"
 }
 
 create_dmg() {
@@ -269,23 +264,6 @@ copy_widget_resources() {
 
     compile_asset_catalog "$APPEX_DIR" "widget"
     copy_bundle_icon "$APPEX_DIR" "Widget"
-}
-
-embed_widget_extension() {
-    APP_BUNDLE="$1"
-    WIDGET_BINARY="$2"
-    APPEX_DIR="${APP_BUNDLE}/Contents/PlugIns/${WIDGET_APPEX}"
-
-    mkdir -p "${APPEX_DIR}/Contents/MacOS"
-
-    cp "$WIDGET_BINARY" "${APPEX_DIR}/Contents/MacOS/${WIDGET_NAME}"
-    chmod +x "${APPEX_DIR}/Contents/MacOS/${WIDGET_NAME}"
-
-    if [ -f "Sources/WidgetSupport/Info.plist" ]; then
-        cp "Sources/WidgetSupport/Info.plist" "${APPEX_DIR}/Contents/"
-    fi
-
-    info "已嵌入 Widget Extension: ${WIDGET_APPEX}"
 }
 
 sign_bundle() {
@@ -609,7 +587,7 @@ case "$MODE" in
         ;;
 
     *)
-        echo "用法: $0 {debug|release|run|clean|icon|restart|dmg}"
+        echo "用法: $0 {debug|release|run|icon|restart|dmg}"
         exit 1
         ;;
 esac

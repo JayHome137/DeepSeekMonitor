@@ -15,15 +15,8 @@ final class SettingsWindowController: NSObject {
         self.viewModel = viewModel
     }
 
-    /// 打开（或切换到）设置窗口
     @MainActor
-    func show(anchorTo anchorWindow: NSWindow? = nil) {
-        if let window = window, window.isVisible {
-            position(window, nextTo: anchorWindow)
-            bringToFront(window)
-            return
-        }
-
+    private func makeWindow() -> NSWindow {
         let settingsView = SettingsView(viewModel: viewModel)
         let hostingController = NSHostingController(rootView: settingsView)
         hostingController.view.wantsLayer = true
@@ -40,68 +33,17 @@ final class SettingsWindowController: NSObject {
         window.titleVisibility = .hidden
         window.hasShadow = true
         window.isMovableByWindowBackground = true
-        position(window, nextTo: anchorWindow)
         window.delegate = self
 
         self.window = window
-        bringToFront(window)
+        return window
     }
 
     @MainActor
     func show(anchorFrame: NSRect?, screen: NSScreen?) {
-        if let window = window, window.isVisible {
-            position(window, nextTo: anchorFrame, on: screen)
-            bringToFront(window)
-            return
-        }
-
-        show(anchorTo: nil)
-        if let window {
-            position(window, nextTo: anchorFrame, on: screen)
-        }
-    }
-
-    @MainActor
-    private func position(_ window: NSWindow, nextTo anchorWindow: NSWindow?) {
-        guard let anchorWindow else {
-            window.center()
-            return
-        }
-
-        let anchorFrame = anchorWindow.frame
-        guard let screen = anchorWindow.screen ?? NSScreen.main else {
-            window.center()
-            return
-        }
-
-        let visibleFrame = screen.visibleFrame
-        let windowSize = window.frame.size
-
-        var origin = NSPoint(
-            x: anchorFrame.maxX + sideGap,
-            y: anchorFrame.maxY - windowSize.height
-        )
-
-        if origin.x + windowSize.width > visibleFrame.maxX - 8 {
-            origin.x = anchorFrame.minX - windowSize.width - sideGap
-        }
-
-        if origin.x < visibleFrame.minX + 8 {
-            origin.x = min(
-                max(visibleFrame.minX + 8, anchorFrame.midX - windowSize.width / 2),
-                visibleFrame.maxX - windowSize.width - 8
-            )
-        }
-
-        if origin.y < visibleFrame.minY + 8 {
-            origin.y = visibleFrame.minY + 8
-        }
-
-        if origin.y + windowSize.height > visibleFrame.maxY - 8 {
-            origin.y = visibleFrame.maxY - windowSize.height - 8
-        }
-
-        window.setFrameOrigin(origin)
+        let window = self.window ?? makeWindow()
+        position(window, nextTo: anchorFrame, on: screen)
+        bringToFront(window)
     }
 
     @MainActor

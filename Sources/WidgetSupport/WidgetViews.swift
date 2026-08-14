@@ -318,7 +318,6 @@ private struct ModelCostRow: View {
     let kind: ModelBadgeKind
     let costCents: Int
     let url: String
-    let showsChevron: Bool
     var height: CGFloat = 36
     @Environment(\.colorScheme) private var colorScheme
 
@@ -336,12 +335,10 @@ private struct ModelCostRow: View {
                     .lineLimit(1)
                     .frame(width: 58, alignment: .trailing)
 
-                if showsChevron {
-                    Image(systemName: "chevron.right")
-                        .font(.system(size: 8, weight: .medium))
-                        .foregroundStyle(widgetTextFaint(for: colorScheme))
-                        .frame(width: 8)
-                }
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 8, weight: .medium))
+                    .foregroundStyle(widgetTextFaint(for: colorScheme))
+                    .frame(width: 8)
             }
             .padding(.horizontal, 8)
             .frame(maxWidth: .infinity, minHeight: height, maxHeight: height)
@@ -465,7 +462,6 @@ private struct MediumWidgetView: View {
                 kind: .flash,
                 costCents: entry.flashCostCents,
                 url: "deepseekmonitor://flash",
-                showsChevron: true,
                 height: 38
             )
 
@@ -474,7 +470,6 @@ private struct MediumWidgetView: View {
                 kind: .pro,
                 costCents: entry.proCostCents,
                 url: "deepseekmonitor://pro",
-                showsChevron: true,
                 height: 38
             )
 
@@ -530,9 +525,7 @@ private func localTime(_ date: Date) -> String {
         usageCurrencyCode: "CNY",
         dayCost: 12.34,
         monthCost: 98.76,
-        flashTokens: 150000,
         flashCostCents: 560,
-        proTokens: 85000,
         proCostCents: 1230,
         usageUpdatedAt: Date(),
         hasData: true

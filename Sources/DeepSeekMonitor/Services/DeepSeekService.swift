@@ -2,7 +2,7 @@ import Foundation
 
 // MARK: - API Errors
 
-enum APIError: LocalizedError, Equatable {
+enum APIError: LocalizedError {
     case noAPIKey
     case invalidURL
     case invalidResponse
@@ -28,10 +28,18 @@ enum APIError: LocalizedError, Equatable {
         case .decodingError(let msg): return "数据解析错误: \(msg)"
         }
     }
+}
 
-    static func == (lhs: APIError, rhs: APIError) -> Bool {
-        lhs.errorDescription == rhs.errorDescription
-    }
+protocol DeepSeekServicing: AnyObject {
+    var hasAPIKey: Bool { get }
+    var apiKey: String? { get }
+    var apiKeyStorageWarning: String? { get }
+
+    func saveAPIKey(_ apiKey: String) throws
+    func clearAPIKey() throws
+    func fetchBalance() async throws -> BalanceResponse
+    func validateAPIKey(_ apiKey: String) async throws -> BalanceResponse
+    func fetchRecentUsage(days: Int) async throws -> UsageResponse
 }
 
 // MARK: - DeepSeek API Service
@@ -43,7 +51,7 @@ enum APIError: LocalizedError, Equatable {
 // 使用: let service = DeepSeekService.shared
 //       let balance = try await service.fetchBalance()
 
-final class DeepSeekService {
+final class DeepSeekService: DeepSeekServicing {
     static let shared = DeepSeekService()
 
     private let baseURL = "https://api.deepseek.com"
@@ -98,11 +106,26 @@ final class DeepSeekService {
     /// 查询账户余额
     /// GET https://api.deepseek.com/user/balance
     func fetchBalance() async throws -> BalanceResponse {
-        guard hasAPIKey else { throw APIError.noAPIKey }
+        guard let storedAPIKey, storedAPIKey.isEmpty == false else {
+            throw APIError.noAPIKey
+        }
+
+        return try await fetchBalance(using: storedAPIKey)
+    }
+
+    /// 验证候选 Key，不修改当前进程状态或钥匙串。
+    func validateAPIKey(_ apiKey: String) async throws -> BalanceResponse {
+        let candidate = apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard candidate.isEmpty == false else { throw APIError.noAPIKey }
+
+        return try await fetchBalance(using: candidate)
+    }
+
+    private func fetchBalance(using apiKey: String) async throws -> BalanceResponse {
 
         var request = URLRequest(url: try makeURL(path: "/user/balance"))
         request.httpMethod = "GET"
-        setRequestHeaders(&request)
+        setRequestHeaders(&request, apiKey: apiKey)
 
         return try await performRequest(request)
     }
@@ -115,7 +138,9 @@ final class DeepSeekService {
     ///   - startDate: 起始日期（含）
     ///   - endDate:   截止日期（含）
     func fetchUsage(from startDate: Date, to endDate: Date) async throws -> UsageResponse {
-        guard hasAPIKey else { throw APIError.noAPIKey }
+        guard let storedAPIKey, storedAPIKey.isEmpty == false else {
+            throw APIError.noAPIKey
+        }
 
         let fmt = ISO8601DateFormatter()
         fmt.formatOptions = [.withFullDate]
@@ -128,7 +153,7 @@ final class DeepSeekService {
 
         var request = URLRequest(url: components.url!)
         request.httpMethod = "GET"
-        setRequestHeaders(&request)
+        setRequestHeaders(&request, apiKey: storedAPIKey)
 
         do {
             return try await performRequest(request)
@@ -156,8 +181,8 @@ final class DeepSeekService {
         return url
     }
 
-    private func setRequestHeaders(_ request: inout URLRequest) {
-        request.setValue("Bearer \(storedAPIKey ?? "")", forHTTPHeaderField: "Authorization")
+    private func setRequestHeaders(_ request: inout URLRequest, apiKey: String) {
+        request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Accept")
     }
 

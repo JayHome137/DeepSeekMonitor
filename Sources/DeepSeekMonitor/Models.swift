@@ -339,13 +339,6 @@ enum DeepSeekModel: String, CaseIterable {
         }
     }
 
-    var shortName: String {
-        switch self {
-        case .flash: return "Flash"
-        case .pro:   return "Pro"
-        }
-    }
-
     var systemImageName: String {
         switch self {
         case .flash: return "bolt.fill"
@@ -353,21 +346,6 @@ enum DeepSeekModel: String, CaseIterable {
         }
     }
 
-    /// Token 单价（每百万 Token，单位：元）
-    /// 根据 DeepSeek 官方定价
-    var inputPricePerMillion: Double {
-        switch self {
-        case .flash: return 0.5   // 举例，以实际为准
-        case .pro:   return 2.0
-        }
-    }
-
-    var outputPricePerMillion: Double {
-        switch self {
-        case .flash: return 2.0
-        case .pro:   return 8.0
-        }
-    }
 }
 
 /// 聚合后的模型用量数据
@@ -402,18 +380,6 @@ struct ModelDailyUsagePoint: Identifiable {
     let requestCount: Int
 }
 
-/// Dashboard 整体状态
-struct DashboardState {
-    var isAvailable: Bool = false
-    var totalBalance: Double = 0
-    var grantedBalance: Double = 0
-    var toppedUpBalance: Double = 0
-    var modelUsage: [DeepSeekModel: ModelUsageSummary] = [:]
-    var lastUpdated: Date?
-    var isLoading: Bool = false
-    var errorMessage: String?
-}
-
 // MARK: - Helpers
 
 func formatNumber(_ number: Int) -> String {
@@ -432,11 +398,8 @@ struct WidgetSnapshot: Codable {
     let usageCurrencyCode: String
     let currentDayCost: Double
     let currentMonthCost: Double
-    let flashTotalTokens: Int
     let flashCostInCents: Int
-    let proTotalTokens: Int
     let proCostInCents: Int
-    let balanceUpdatedAt: Date
     let usageUpdatedAt: Date
     let lastUpdated: Date
 }
