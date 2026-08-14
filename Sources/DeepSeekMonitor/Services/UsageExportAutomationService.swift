@@ -9,7 +9,7 @@ extension Notification.Name {
 struct UsageExportDownloadEvent {
     let taskID: UUID
     let fileURL: URL
-    let expectedRange: UsageAutoImportService.ExportDateRange
+    let referenceDate: Date
 }
 
 private enum UsageExportScriptMessage {
@@ -27,7 +27,7 @@ private enum UsageExportAutomationState {
 
 private struct UsageExportTask {
     let id: UUID
-    let expectedRange: UsageAutoImportService.ExportDateRange
+    let referenceDate: Date
 }
 
 @MainActor
@@ -140,7 +140,7 @@ final class UsageExportAutomationService: NSObject, ObservableObject {
     }
 
     func reportImportSuccess(fileNames: [String]) {
-        statusMessage = "已导入 \(fileNames.joined(separator: " + ")) · UTC+0"
+        statusMessage = "已导入 \(fileNames.joined(separator: " + ")) · 官方导出时区"
     }
 
     func reportImportFailure(_ message: String) {
@@ -201,7 +201,7 @@ final class UsageExportAutomationService: NSObject, ObservableObject {
         shouldShowWindowOnFailure = openWindowOnFailure
         activeExportTask = UsageExportTask(
             id: UUID(),
-            expectedRange: UsageAutoImportService.expectedCurrentMonthExportRange()
+            referenceDate: Date()
         )
 
         let webView = ensureWebView()
@@ -411,7 +411,7 @@ final class UsageExportAutomationService: NSObject, ObservableObject {
                 if opened {
                     self.isLoggedIn = true
                     self.automationState = .selectingRange
-                    self.statusMessage = "正在选择本月（UTC+0）..."
+                    self.statusMessage = "正在选择本月..."
                     self.rangeOptionRetryCount = 0
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { [weak self] in
                         Task { @MainActor [weak self] in
@@ -680,7 +680,7 @@ final class UsageExportAutomationService: NSObject, ObservableObject {
                 if state?["clicked"] as? Bool == true {
                     self.isLoggedIn = true
                     self.automationState = .waitingForDownload
-                    self.statusMessage = "已按 UTC+0 选择本月，等待用量 ZIP..."
+                    self.statusMessage = "已选择本月，等待用量 ZIP..."
                     self.pendingExportRequest = false
                     self.exportLookupRetryCount = 0
                     self.beginDownloadWatch(for: taskID)
@@ -801,7 +801,7 @@ final class UsageExportAutomationService: NSObject, ObservableObject {
             object: UsageExportDownloadEvent(
                 taskID: task.id,
                 fileURL: fileURL,
-                expectedRange: task.expectedRange
+                referenceDate: task.referenceDate
             )
         )
     }

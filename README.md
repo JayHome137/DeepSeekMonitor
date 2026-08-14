@@ -2,7 +2,7 @@
 
 [English README](README_EN.MD) | 当前默认 README 为中文说明，英文版请查看 `README_EN.MD`。
 
-DeepSeek Monitor 是一款 macOS 菜单栏应用，用于监控 DeepSeek V4 Flash / Pro 的账户余额、Token 用量和消费情况。当前发布版本为 **v1.4.10**。
+DeepSeek Monitor 是一款 macOS 菜单栏应用，用于监控 DeepSeek V4 Flash / Pro 的账户余额、Token 用量和消费情况。当前发布版本为 **v1.4.11**。
 
 需要 **macOS 14 或更高版本**；支持 **M 系列 Mac**，也支持仍可升级到 macOS 14+ 的 **Intel Mac**。
 
@@ -26,7 +26,7 @@ DeepSeek Monitor 是一款 macOS 菜单栏应用，用于监控 DeepSeek V4 Flas
 
 ## 功能
 
-- **菜单栏主面板**：展示账户余额、账户可用状态、按 UTC+0 统计的今日/本月消费、V4 Flash / Pro 用量和 7 日 Token 趋势。
+- **菜单栏主面板**：展示账户余额、账户可用状态、按官方导出时区统计的今日/本月消费、V4 Flash / Pro 用量和 7 日 Token 趋势。
 - **原生 WidgetKit 桌面小组件**：中号 macOS 小组件，使用玻璃风格 UI，展示余额、日/月消费和模型费用入口。
 - **模型详情侧页**：点击 V4 Flash 或 V4 Pro 后打开与主页等宽等高的侧页，查看每日 Token 和请求次数图表。
 - **小组件深链操作**：点击小组件内的模型行会直接打开对应模型详情侧页，不会先弹出完整主页。
@@ -96,7 +96,7 @@ cd DeepSeekMonitor
 4. 如需使用 macOS 桌面小组件，开启 **原生小组件数据**。
 5. 在 macOS 小组件选择界面添加 **DeepSeek Monitor** 小组件。
 
-如果你的账户无法使用 DeepSeek `/v1/usage` 接口，可以在设置里优先导入官方 Usage ZIP，或启用自动导出辅助功能。用量日期按 DeepSeek 官方的 UTC+0 口径统计，网页数据可能延迟约 5 分钟。
+如果你的账户无法使用 DeepSeek `/v1/usage` 接口，可以在设置里优先导入官方 Usage ZIP，或启用自动导出辅助功能。用量日期以官方导出文件携带的时区为准，网页数据可能延迟约 5 分钟。
 
 ## 架构
 

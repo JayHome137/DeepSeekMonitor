@@ -104,33 +104,54 @@ enum UsageAutoImportService {
         )
     }
 
-    static func expectedRecentExportRange(referenceDate: Date = Date()) -> ExportDateRange {
-        let calendar = UsageTime.calendar
+    static func expectedRecentExportRange(
+        referenceDate: Date = Date(),
+        timeZone: TimeZone = UsageTime.defaultTimeZone
+    ) -> ExportDateRange {
+        let calendar = UsageTime.calendar(in: timeZone)
         let today = calendar.startOfDay(for: referenceDate)
         let start = calendar.date(byAdding: .day, value: -6, to: today) ?? today
         let end = calendar.date(byAdding: .day, value: 1, to: today) ?? today
-        let formatter = UsageTime.formatter("yyyy-MM-dd")
+        let formatter = UsageTime.formatter("yyyy-MM-dd", timeZone: timeZone)
         return ExportDateRange(
             startDate: formatter.string(from: start),
             endDateExclusive: formatter.string(from: end)
         )
     }
 
-    static func expectedCurrentMonthExportRange(referenceDate: Date = Date()) -> ExportDateRange {
-        let calendar = UsageTime.calendar
+    static func expectedCurrentMonthExportRange(
+        referenceDate: Date = Date(),
+        timeZone: TimeZone = UsageTime.defaultTimeZone
+    ) -> ExportDateRange {
+        currentMonthExportRanges(referenceDate: referenceDate, timeZone: timeZone).includingToday
+    }
+
+    private static func currentMonthExportRanges(
+        referenceDate: Date,
+        timeZone: TimeZone
+    ) -> (excludingToday: ExportDateRange, includingToday: ExportDateRange) {
+        let calendar = UsageTime.calendar(in: timeZone)
         let today = calendar.startOfDay(for: referenceDate)
         let monthStart = calendar.dateInterval(of: .month, for: today)?.start ?? today
-        let end = calendar.date(byAdding: .day, value: 1, to: today) ?? today
-        let formatter = UsageTime.formatter("yyyy-MM-dd")
-        return ExportDateRange(
-            startDate: formatter.string(from: monthStart),
-            endDateExclusive: formatter.string(from: end)
+        let tomorrow = calendar.date(byAdding: .day, value: 1, to: today) ?? today
+        let formatter = UsageTime.formatter("yyyy-MM-dd", timeZone: timeZone)
+        let startDate = formatter.string(from: monthStart)
+        return (
+            excludingToday: ExportDateRange(
+                startDate: startDate,
+                endDateExclusive: formatter.string(from: today)
+            ),
+            includingToday: ExportDateRange(
+                startDate: startDate,
+                endDateExclusive: formatter.string(from: tomorrow)
+            )
         )
     }
 
     static func validateAutomaticExport(
         _ candidate: ImportCandidate,
-        expectedRange: ExportDateRange
+        referenceDate: Date = Date(),
+        timeZone: TimeZone
     ) throws {
         guard candidate.isArchive else {
             throw UsageCSVImportError.invalidExportArchive("自动网页导出必须返回官方 ZIP")
@@ -139,12 +160,20 @@ enum UsageAutoImportService {
             throw UsageCSVImportError.invalidExportArchive("无法确认导出日期范围")
         }
 
-        guard actualRange == expectedRange else {
+        let expected = currentMonthExportRanges(
+            referenceDate: referenceDate,
+            timeZone: timeZone
+        )
+        let hasExpectedStart = actualRange.startDate == expected.includingToday.startDate
+        let hasExpectedEnd =
+            actualRange.endDateExclusive == expected.excludingToday.endDateExclusive ||
+            actualRange.endDateExclusive == expected.includingToday.endDateExclusive
+        guard hasExpectedStart, hasExpectedEnd else {
             throw UsageCSVImportError.staleExportRange(
                 actualStartDate: actualRange.startDate,
                 actualEndDateExclusive: actualRange.endDateExclusive,
-                expectedStartDate: expectedRange.startDate,
-                expectedEndDateExclusive: expectedRange.endDateExclusive
+                expectedStartDate: expected.includingToday.startDate,
+                expectedEndDateExclusive: "\(expected.excludingToday.endDateExclusive) 或 \(expected.includingToday.endDateExclusive)"
             )
         }
     }
@@ -375,7 +404,8 @@ enum UsageAutoImportService {
         }
 
         if let text = String(data: sample, encoding: .utf8)?.lowercased(),
-           text.contains("utc_date") || text.contains("user_id") || text.contains("amount") {
+           text.contains("utc_date") || text.contains("start_time_iso") ||
+           text.contains("user_id") || text.contains("amount") {
             return .csv
         }
 

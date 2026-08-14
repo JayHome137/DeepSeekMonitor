@@ -240,10 +240,13 @@ final class DashboardViewModel: ObservableObject {
                 let usageResp = try await usageTask
 
                 // ── 更新用量、费用和趋势 ──
-                let recentRange = UsageAutoImportService.expectedRecentExportRange()
+                let recentRange = UsageAutoImportService.expectedRecentExportRange(
+                    timeZone: usageTimeZone
+                )
                 let mergedRecords = LocalCache.shared.mergeUsageRecords(
                     usageResp.data,
-                    replacing: recentRange
+                    replacing: recentRange,
+                    timeZone: usageTimeZone
                 )
                 applyUsageRecords(mergedRecords)
                 usageLastUpdated = Date()
@@ -320,19 +323,12 @@ final class DashboardViewModel: ObservableObject {
         costURL: URL? = nil,
         replacing range: UsageAutoImportService.ExportDateRange? = nil
     ) throws {
-        let records = try UsageCSVImporter.importRecords(
+        let result = try UsageCSVImporter.importResult(
             from: url,
             costURL: costURL,
             defaultCurrencyCode: balanceCurrencyCode
         )
-        try UsageAutoImportService.validateRecords(records, within: range)
-        let mergedRecords = LocalCache.shared.mergeUsageRecords(records, replacing: range)
-        applyUsageRecords(mergedRecords)
-        warningMessage = LocalCache.shared.needsCurrentMonthBaseline()
-            ? "近 7 日用量已更新，本月历史仍需导入完整的本月 ZIP"
-            : "已显示导入的用量记录"
-        usageLastUpdated = Date()
-        saveCache()
+        try applyImportedUsage(result, replacing: range)
     }
 
     @discardableResult
@@ -347,7 +343,10 @@ final class DashboardViewModel: ObservableObject {
         do {
             let prepared = try UsageAutoImportService.prepareImportCandidate(from: event.fileURL)
             candidate = prepared
-            let fileNames = try importUsageCandidate(prepared, expectedRange: event.expectedRange)
+            let fileNames = try importUsageCandidate(
+                prepared,
+                automaticReferenceDate: event.referenceDate
+            )
             try? UsageAutoImportService.cleanupImportedSources(keeping: event.fileURL)
             UsageExportAutomationService.shared.reportImportSuccess(fileNames: fileNames)
             return .success(fileNames)
@@ -363,21 +362,46 @@ final class DashboardViewModel: ObservableObject {
 
     private func importUsageCandidate(
         _ candidate: UsageAutoImportService.ImportCandidate,
-        expectedRange: UsageAutoImportService.ExportDateRange? = nil
+        automaticReferenceDate: Date? = nil
     ) throws -> [String] {
-        if let expectedRange {
-            try UsageAutoImportService.validateAutomaticExport(
-                candidate,
-                expectedRange: expectedRange
-            )
-        }
-        try importUsageCSV(
+        let result = try UsageCSVImporter.importResult(
             from: candidate.preparedAmountCSVURL,
             costURL: candidate.preparedCostCSVURL,
-            replacing: candidate.exportDateRange
+            defaultCurrencyCode: balanceCurrencyCode
         )
+        let importTimeZone = result.timeZone ?? usageTimeZone
+        if let automaticReferenceDate {
+            try UsageAutoImportService.validateAutomaticExport(
+                candidate,
+                referenceDate: automaticReferenceDate,
+                timeZone: importTimeZone
+            )
+        }
+        try applyImportedUsage(result, replacing: candidate.exportDateRange)
         UsageAutoImportService.markImported(candidate.fingerprint)
         return candidate.selectedCSVNames
+    }
+
+    private func applyImportedUsage(
+        _ result: UsageCSVImportResult,
+        replacing range: UsageAutoImportService.ExportDateRange?
+    ) throws {
+        try UsageAutoImportService.validateRecords(result.records, within: range)
+        let importTimeZone = result.timeZone ?? usageTimeZone
+        let mergedRecords = LocalCache.shared.mergeUsageRecords(
+            result.records,
+            replacing: range,
+            timeZone: importTimeZone
+        )
+        if let secondsFromGMT = result.timeZoneSecondsFromGMT {
+            LocalCache.shared.saveUsageTimeZone(secondsFromGMT: secondsFromGMT)
+        }
+        applyUsageRecords(mergedRecords)
+        warningMessage = LocalCache.shared.needsCurrentMonthBaseline(timeZone: importTimeZone)
+            ? "近 7 日用量已更新，本月历史仍需导入完整的本月 ZIP"
+            : "已显示导入的用量记录"
+        usageLastUpdated = Date()
+        saveCache()
     }
 
     @discardableResult
@@ -421,6 +445,10 @@ final class DashboardViewModel: ObservableObject {
 
     var currentMonthCostFormatted: String {
         formattedCurrency(currentMonthCost, currencyCode: usageCurrencyCode)
+    }
+
+    var usageTimeZone: TimeZone {
+        LocalCache.shared.usageTimeZone
     }
 
     var lastUpdated: Date? {
@@ -467,12 +495,12 @@ final class DashboardViewModel: ObservableObject {
 
     /// 最近 N 天的趋势数据（按日期排序）
     var chartData: [ChartDataPoint] {
-        let calendar = UsageTime.calendar
+        let calendar = UsageTime.calendar(in: usageTimeZone)
         let today = calendar.startOfDay(for: Date())
         let dayFormatter: DateFormatter = {
             let f = DateFormatter()
             f.locale = Locale(identifier: "zh_CN")
-            f.timeZone = UsageTime.timeZone
+            f.timeZone = usageTimeZone
             f.dateFormat = "M/d"
             return f
         }()
@@ -567,7 +595,9 @@ final class DashboardViewModel: ObservableObject {
     }
 
     private func applyUsageRecords(_ records: [UsageRecord]) {
-        let recentRange = UsageAutoImportService.expectedRecentExportRange()
+        let recentRange = UsageAutoImportService.expectedRecentExportRange(
+            timeZone: usageTimeZone
+        )
         let recentRecords = records.filter { recentRange.contains($0.date) }
         let currencyRecords = recentRecords.isEmpty ? records : recentRecords
         usageCurrencyCode = preferredUsageCurrency(from: currencyRecords)
@@ -715,7 +745,11 @@ final class DashboardViewModel: ObservableObject {
     private func computeCurrentMonthCost(from records: [UsageRecord]) -> Double {
         let now = Date()
         let totalAmount = records.reduce(Decimal.zero) { partial, record in
-            guard UsageTime.isSameMonth(record.date, as: now) else {
+            guard UsageTime.isSameMonth(
+                record.date,
+                as: now,
+                timeZone: usageTimeZone
+            ) else {
                 return partial
             }
             return partial + record.costAmount(for: usageCurrencyCode)
@@ -726,7 +760,11 @@ final class DashboardViewModel: ObservableObject {
     private func computeCurrentDayCost(from records: [UsageRecord]) -> Double {
         let now = Date()
         let totalAmount = records.reduce(Decimal.zero) { partial, record in
-            guard UsageTime.isSameDay(record.date, as: now) else {
+            guard UsageTime.isSameDay(
+                record.date,
+                as: now,
+                timeZone: usageTimeZone
+            ) else {
                 return partial
             }
             return partial + record.costAmount(for: usageCurrencyCode)
@@ -772,7 +810,7 @@ final class DashboardViewModel: ObservableObject {
 
     private func buildModelDailyPoints(from values: [Date: (tokens: Int, hit: Int, miss: Int, output: Int, requests: Int)]) -> [ModelDailyUsagePoint] {
         values.keys.sorted().map { date in
-            let normalizedDate = UsageTime.calendar.startOfDay(for: date)
+            let normalizedDate = UsageTime.calendar(in: usageTimeZone).startOfDay(for: date)
             let metrics = values[date] ?? (0, 0, 0, 0, 0)
             return ModelDailyUsagePoint(
                 date: normalizedDate,
@@ -798,13 +836,13 @@ final class DashboardViewModel: ObservableObject {
     }
 
     private func recordDay(from raw: String) -> Date? {
-        UsageTime.day(from: raw)
+        UsageTime.day(from: raw, timeZone: usageTimeZone)
     }
 
     private var chartDateFormatter: DateFormatter {
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "zh_CN")
-        formatter.timeZone = UsageTime.timeZone
+        formatter.timeZone = usageTimeZone
         formatter.dateFormat = "M/d"
         return formatter
     }
@@ -812,7 +850,7 @@ final class DashboardViewModel: ObservableObject {
     private var cacheDateFormatter: DateFormatter {
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.timeZone = UsageTime.timeZone
+        formatter.timeZone = usageTimeZone
         formatter.dateFormat = "yyyy-MM-dd"
         return formatter
     }

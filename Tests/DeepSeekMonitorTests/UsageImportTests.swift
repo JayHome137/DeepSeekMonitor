@@ -75,6 +75,160 @@ final class UsageImportTests: XCTestCase {
         XCTAssertEqual(record.costAmount(for: "USD"), decimal("1.2345"))
     }
 
+    func testCurrentISOExportsWithBOMAndCRLFImportEndToEnd() throws {
+        let directory = try makeTemporaryDirectory()
+        let amountLines = [
+            "user_id,start_time_iso,end_time_iso,model,api_key_name,api_key,type,price,amount",
+            "account,2026-08-13T00:00:00+08:00,2026-08-14T00:00:00+08:00,deepseek-v4-pro,\"Team, Primary\",sk-masked,input_cache_hit_tokens,0.000000025,1000",
+            "account,2026-08-13T00:00:00+08:00,2026-08-14T00:00:00+08:00,deepseek-v4-pro,\"Team, Primary\",sk-masked,input_cache_miss_tokens,0.000003,500",
+            "account,2026-08-13T00:00:00+08:00,2026-08-14T00:00:00+08:00,deepseek-v4-pro,\"Team, Primary\",sk-masked,output_tokens,0.000006,200",
+            "account,2026-08-13T00:00:00+08:00,2026-08-14T00:00:00+08:00,deepseek-v4-pro,\"Team, Primary\",sk-masked,request_count,,3",
+        ]
+        let costLines = [
+            "user_id,start_time_iso,end_time_iso,model,wallet_type,cost,currency",
+            "account,2026-08-13T00:00:00+08:00,2026-08-14T00:00:00+08:00,deepseek-v4-pro,paid,1.2345,CNY",
+        ]
+        var amountData = Data([0xEF, 0xBB, 0xBF])
+        amountData.append(Data((amountLines.joined(separator: "\r\n") + "\r\n").utf8))
+        var costData = Data([0xEF, 0xBB, 0xBF])
+        costData.append(Data((costLines.joined(separator: "\r\n") + "\r\n").utf8))
+
+        let amountURL = try write(amountData, named: "amount-2026-08-01_2026-08-14.csv", in: directory)
+        let costURL = try write(costData, named: "cost-2026-08-01_2026-08-14.csv", in: directory)
+        let result = try UsageCSVImporter.importResult(from: amountURL, costURL: costURL)
+        let record = try XCTUnwrap(result.records.first)
+
+        XCTAssertEqual(result.records.count, 1)
+        XCTAssertEqual(result.timeZoneSecondsFromGMT, 8 * 60 * 60)
+        XCTAssertEqual(record.date, "2026-08-13")
+        XCTAssertEqual(record.totalTokens, 1_700)
+        XCTAssertEqual(record.inputCacheHitTokens, 1_000)
+        XCTAssertEqual(record.inputCacheMissTokens, 500)
+        XCTAssertEqual(record.completionTokens, 200)
+        XCTAssertEqual(record.requestCount, 3)
+        XCTAssertEqual(record.costAmount(for: "CNY"), decimal("1.2345"))
+    }
+
+    func testISOExportKeepsCalendarDateForUTCAndPositiveOffsets() throws {
+        let directory = try makeTemporaryDirectory()
+        let cases = [(suffix: "utc", zone: "+00:00", seconds: 0),
+                     (suffix: "east", zone: "+08:00", seconds: 8 * 60 * 60)]
+
+        for item in cases {
+            let amountURL = try write(
+                """
+                user_id,start_time_iso,end_time_iso,model,api_key_name,api_key,type,price,amount
+                account,2026-08-13T00:00:00\(item.zone),2026-08-14T00:00:00\(item.zone),deepseek-v4-flash,test,sk-masked,output_tokens,0,1
+                """,
+                named: "amount-\(item.suffix).csv",
+                in: directory
+            )
+            let result = try UsageCSVImporter.importResult(from: amountURL)
+
+            XCTAssertEqual(result.records.first?.date, "2026-08-13")
+            XCTAssertEqual(result.timeZoneSecondsFromGMT, item.seconds)
+        }
+    }
+
+    func testAmountAndCostRejectDifferentOffsetsForTheSameDate() throws {
+        let directory = try makeTemporaryDirectory()
+        let amountURL = try write(
+            """
+            user_id,start_time_iso,end_time_iso,model,api_key_name,api_key,type,price,amount
+            account,2026-08-13T00:00:00+08:00,2026-08-14T00:00:00+08:00,deepseek-v4-flash,test,sk-masked,output_tokens,0,1
+            """,
+            named: "amount.csv",
+            in: directory
+        )
+        let costURL = try write(
+            """
+            user_id,start_time_iso,end_time_iso,model,wallet_type,cost,currency
+            account,2026-08-13T00:00:00+00:00,2026-08-14T00:00:00+00:00,deepseek-v4-flash,paid,0.01,CNY
+            """,
+            named: "cost.csv",
+            in: directory
+        )
+
+        XCTAssertThrowsError(
+            try UsageCSVImporter.importRecords(from: amountURL, costURL: costURL)
+        ) { error in
+            XCTAssertTrue(error.localizedDescription.contains("导出时区不一致"))
+        }
+    }
+
+    func testInvalidISOIntervalsAreRejectedWithoutChangingCacheOrExposingRows() throws {
+        let directory = try makeTemporaryDirectory()
+        let suiteName = "DeepSeekMonitorTests-\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defaults.removePersistentDomain(forName: suiteName)
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let cache = LocalCache(defaults: defaults)
+        cache.saveUsageRecords([makeUsageRecord(date: "2026-08-12", model: .flash, tokens: 99)])
+
+        let invalidRows = [
+            "private-user,not-an-iso-time,2026-08-14T00:00:00+08:00,deepseek-v4-flash,private-key-name,sensitive-key-value,output_tokens,0,1",
+            "private-user,2026-08-14T00:00:00+08:00,2026-08-13T00:00:00+08:00,deepseek-v4-flash,private-key-name,sensitive-key-value,output_tokens,0,1",
+        ]
+        for (index, row) in invalidRows.enumerated() {
+            let amountURL = try write(
+                """
+                user_id,start_time_iso,end_time_iso,model,api_key_name,api_key,type,price,amount
+                \(row)
+                """,
+                named: "amount-invalid-\(index).csv",
+                in: directory
+            )
+
+            XCTAssertThrowsError(try UsageCSVImporter.importRecords(from: amountURL)) { error in
+                let message = error.localizedDescription
+                XCTAssertFalse(message.contains("private-user"))
+                XCTAssertFalse(message.contains("private-key-name"))
+                XCTAssertFalse(message.contains("sensitive-key-value"))
+            }
+            XCTAssertEqual(cache.loadUsageRecords().map(\.totalTokens), [99])
+        }
+
+        let validAmountURL = try write(
+            """
+            user_id,start_time_iso,end_time_iso,model,api_key_name,api_key,type,price,amount
+            account,2026-08-13T00:00:00+08:00,2026-08-14T00:00:00+08:00,deepseek-v4-flash,test,masked-key,output_tokens,0,1
+            """,
+            named: "amount-valid.csv",
+            in: directory
+        )
+        let invalidCostURL = try write(
+            """
+            user_id,start_time_iso,end_time_iso,model,wallet_type,cost,currency
+            private-user,not-an-iso-time,2026-08-14T00:00:00+08:00,deepseek-v4-flash,paid,0.01,CNY
+            """,
+            named: "cost-invalid.csv",
+            in: directory
+        )
+        XCTAssertThrowsError(
+            try UsageCSVImporter.importRecords(from: validAmountURL, costURL: invalidCostURL)
+        ) { error in
+            XCTAssertFalse(error.localizedDescription.contains("private-user"))
+        }
+        XCTAssertEqual(cache.loadUsageRecords().map(\.totalTokens), [99])
+    }
+
+    func testISOExportRequiresPairedTimeColumns() throws {
+        let directory = try makeTemporaryDirectory()
+        let amountURL = try write(
+            """
+            user_id,start_time_iso,model,api_key_name,api_key,type,price,amount
+            account,2026-08-13T00:00:00+08:00,deepseek-v4-flash,test,sk-masked,output_tokens,0,1
+            """,
+            named: "amount-missing-end.csv",
+            in: directory
+        )
+
+        XCTAssertThrowsError(try UsageCSVImporter.importRecords(from: amountURL)) { error in
+            XCTAssertTrue(error.localizedDescription.contains("start_time_iso"))
+            XCTAssertTrue(error.localizedDescription.contains("end_time_iso"))
+        }
+    }
+
     func testAmountRowsKeepSubCentPrecisionUntilAfterAggregation() throws {
         let directory = try makeTemporaryDirectory()
         let amountURL = try write(
@@ -126,14 +280,16 @@ final class UsageImportTests: XCTestCase {
         XCTAssertEqual(record.costAmount(for: "JPY"), .zero)
     }
 
-    func testUsageDateComparisonAlwaysUsesUTC() throws {
+    func testUsageDateComparisonUsesExportTimeZone() throws {
         let formatter = ISO8601DateFormatter()
         let reference = try XCTUnwrap(formatter.date(from: "2026-06-30T16:30:00Z"))
+        let exportTimeZone = try XCTUnwrap(TimeZone(secondsFromGMT: 8 * 60 * 60))
 
         XCTAssertTrue(UsageTime.isSameDay("2026-06-30", as: reference))
         XCTAssertFalse(UsageTime.isSameDay("2026-07-01", as: reference))
-        XCTAssertTrue(UsageTime.isSameMonth("2026-06-01", as: reference))
-        XCTAssertFalse(UsageTime.isSameMonth("2026-07-01", as: reference))
+        XCTAssertTrue(UsageTime.isSameDay("2026-07-01", as: reference, timeZone: exportTimeZone))
+        XCTAssertTrue(UsageTime.isSameMonth("2026-07-01", as: reference, timeZone: exportTimeZone))
+        XCTAssertFalse(UsageTime.isSameMonth("2026-06-01", as: reference, timeZone: exportTimeZone))
     }
 
     func testOfficialZIPPreparesAmountAndCostFilesTogether() throws {
@@ -207,76 +363,89 @@ final class UsageImportTests: XCTestCase {
         XCTAssertEqual(records.reduce(0) { $0 + $1.requestCount }, expectedRequests)
     }
 
-    func testAutomaticExportMustExactlyMatchCapturedCurrentMonthRange() throws {
+    func testCurrentOfficialCSVPairImportsWhenConfigured() throws {
+        let environment = ProcessInfo.processInfo.environment
+        guard let amountPath = environment["DEEPSEEK_USAGE_AMOUNT_CSV"],
+              let costPath = environment["DEEPSEEK_USAGE_COST_CSV"] else {
+            throw XCTSkip("External current CSV pair validation is not configured")
+        }
+
+        let result = try UsageCSVImporter.importResult(
+            from: URL(fileURLWithPath: amountPath),
+            costURL: URL(fileURLWithPath: costPath)
+        )
+
+        XCTAssertFalse(result.records.isEmpty)
+        XCTAssertNotNil(result.timeZoneSecondsFromGMT)
+        XCTAssertGreaterThan(result.records.reduce(0) { $0 + $1.totalTokens }, 0)
+        XCTAssertGreaterThan(result.records.reduce(0) { $0 + $1.requestCount }, 0)
+        XCTAssertTrue(result.records.allSatisfy {
+            $0.date.range(of: #"^\d{4}-\d{2}-\d{2}$"#, options: .regularExpression) != nil
+        })
+    }
+
+    func testAutomaticExportAcceptsCurrentAndNextDayExclusiveBoundariesInExportTimeZone() throws {
         let formatter = ISO8601DateFormatter()
-        let referenceDate = try XCTUnwrap(formatter.date(from: "2026-07-26T12:00:00Z"))
+        let referenceDate = try XCTUnwrap(formatter.date(from: "2026-08-13T16:30:00Z"))
+        let exportTimeZone = try XCTUnwrap(TimeZone(secondsFromGMT: 8 * 60 * 60))
         let placeholder = URL(fileURLWithPath: "/tmp/usage-export.zip")
-        let expectedRange = UsageAutoImportService.ExportDateRange(
-            startDate: "2026-07-01",
-            endDateExclusive: "2026-07-27"
-        )
-        let currentCandidate = UsageAutoImportService.ImportCandidate(
-            sourceURL: placeholder,
-            preparedAmountCSVURL: placeholder,
-            preparedCostCSVURL: placeholder,
-            fingerprint: "current",
-            sourceName: placeholder.lastPathComponent,
-            selectedCSVNames: [
-                "amount-2026-07-01_2026-07-27.csv",
-                "cost-2026-07-01_2026-07-27.csv",
-            ],
-            exportDateRange: expectedRange,
-            isArchive: true
-        )
 
-        XCTAssertEqual(
-            UsageAutoImportService.expectedCurrentMonthExportRange(referenceDate: referenceDate),
-            expectedRange
-        )
-        XCTAssertNoThrow(
-            try UsageAutoImportService.validateAutomaticExport(
-                currentCandidate,
-                expectedRange: expectedRange
+        func candidate(_ range: UsageAutoImportService.ExportDateRange) -> UsageAutoImportService.ImportCandidate {
+            UsageAutoImportService.ImportCandidate(
+                sourceURL: placeholder,
+                preparedAmountCSVURL: placeholder,
+                preparedCostCSVURL: placeholder,
+                fingerprint: "\(range.startDate)-\(range.endDateExclusive)",
+                sourceName: placeholder.lastPathComponent,
+                selectedCSVNames: [],
+                exportDateRange: range,
+                isArchive: true
             )
-        )
-
-        let staleCandidate = UsageAutoImportService.ImportCandidate(
-            sourceURL: placeholder,
-            preparedAmountCSVURL: placeholder,
-            preparedCostCSVURL: placeholder,
-            fingerprint: "stale",
-            sourceName: placeholder.lastPathComponent,
-            selectedCSVNames: [
-                "amount-2026-07-20_2026-07-27.csv",
-                "cost-2026-07-20_2026-07-27.csv",
-            ],
-            exportDateRange: .init(startDate: "2026-07-20", endDateExclusive: "2026-07-27"),
-            isArchive: true
-        )
-
-        XCTAssertThrowsError(
-            try UsageAutoImportService.validateAutomaticExport(
-                staleCandidate,
-                expectedRange: expectedRange
-            )
-        ) { error in
-            guard case UsageCSVImportError.staleExportRange(
-                let actualStart,
-                let actualEnd,
-                let expectedStart,
-                let expectedEnd
-            ) = error else {
-                return XCTFail("Unexpected error: \(error)")
-            }
-            XCTAssertEqual(actualStart, "2026-07-20")
-            XCTAssertEqual(actualEnd, "2026-07-27")
-            XCTAssertEqual(expectedStart, "2026-07-01")
-            XCTAssertEqual(expectedEnd, "2026-07-27")
         }
 
         XCTAssertEqual(
-            UsageAutoImportService.expectedRecentExportRange(referenceDate: referenceDate),
-            .init(startDate: "2026-07-20", endDateExclusive: "2026-07-27")
+            UsageAutoImportService.expectedCurrentMonthExportRange(
+                referenceDate: referenceDate,
+                timeZone: exportTimeZone
+            ),
+            .init(startDate: "2026-08-01", endDateExclusive: "2026-08-15")
+        )
+        for endDate in ["2026-08-14", "2026-08-15"] {
+            XCTAssertNoThrow(
+                try UsageAutoImportService.validateAutomaticExport(
+                    candidate(.init(startDate: "2026-08-01", endDateExclusive: endDate)),
+                    referenceDate: referenceDate,
+                    timeZone: exportTimeZone
+                )
+            )
+        }
+
+        let rejectedRanges: [UsageAutoImportService.ExportDateRange] = [
+            .init(startDate: "2026-07-01", endDateExclusive: "2026-08-14"),
+            .init(startDate: "2026-08-01", endDateExclusive: "2026-08-13"),
+            .init(startDate: "2026-08-01", endDateExclusive: "2026-08-16"),
+            .init(startDate: "2026-09-01", endDateExclusive: "2026-09-02"),
+        ]
+        for range in rejectedRanges {
+            XCTAssertThrowsError(
+                try UsageAutoImportService.validateAutomaticExport(
+                    candidate(range),
+                    referenceDate: referenceDate,
+                    timeZone: exportTimeZone
+                )
+            ) { error in
+                guard case UsageCSVImportError.staleExportRange = error else {
+                    return XCTFail("Unexpected error: \(error)")
+                }
+            }
+        }
+
+        XCTAssertEqual(
+            UsageAutoImportService.expectedRecentExportRange(
+                referenceDate: referenceDate,
+                timeZone: exportTimeZone
+            ),
+            .init(startDate: "2026-08-08", endDateExclusive: "2026-08-15")
         )
     }
 
@@ -357,41 +526,63 @@ final class UsageImportTests: XCTestCase {
         XCTAssertEqual(merged.map(\.totalTokens), [2, 30, 50])
     }
 
-    func testCompleteMonthBaselineDiscardsLegacyPrecisionHistoryAndMarksSchema() throws {
+    func testSchema3BaselineUsesExportTimeZoneAndDiscardsLegacyUTCHistory() throws {
         let formatter = ISO8601DateFormatter()
-        let referenceDate = try XCTUnwrap(formatter.date(from: "2026-07-02T12:00:00Z"))
+        let referenceDate = try XCTUnwrap(formatter.date(from: "2026-08-02T16:30:00Z"))
+        let exportTimeZone = try XCTUnwrap(TimeZone(secondsFromGMT: 8 * 60 * 60))
         let suiteName = "DeepSeekMonitorTests-\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
         defaults.removePersistentDomain(forName: suiteName)
         defer { defaults.removePersistentDomain(forName: suiteName) }
 
         let cache = LocalCache(defaults: defaults)
+        defaults.set(2, forKey: "cached_usage_history_schema_version")
+        defaults.set("2026-08", forKey: "cached_usage_baseline_month")
         cache.saveUsageRecords([
-            makeUsageRecord(date: "2026-06-30", model: .flash, tokens: 10),
-            makeUsageRecord(date: "2026-07-01", model: .flash, tokens: 20),
+            makeUsageRecord(date: "2026-07-31", model: .flash, tokens: 10),
+            makeUsageRecord(date: "2026-08-01", model: .flash, tokens: 20),
         ])
-        XCTAssertTrue(cache.needsCurrentMonthBaseline(referenceDate: referenceDate))
+        XCTAssertTrue(
+            cache.needsCurrentMonthBaseline(
+                referenceDate: referenceDate,
+                timeZone: exportTimeZone
+            )
+        )
 
         let range = UsageAutoImportService.ExportDateRange(
-            startDate: "2026-07-01",
-            endDateExclusive: "2026-07-03"
+            startDate: "2026-08-01",
+            endDateExclusive: "2026-08-03"
         )
         let incoming = [
-            makeUsageRecord(date: "2026-07-01", model: .flash, tokens: 200),
-            makeUsageRecord(date: "2026-07-02", model: .pro, tokens: 300),
+            makeUsageRecord(date: "2026-08-01", model: .flash, tokens: 200),
+            makeUsageRecord(date: "2026-08-02", model: .pro, tokens: 300),
         ]
         let merged = cache.mergeUsageRecords(
             incoming,
             replacing: range,
-            referenceDate: referenceDate
+            referenceDate: referenceDate,
+            timeZone: exportTimeZone
+        )
+        cache.saveUsageTimeZone(secondsFromGMT: 8 * 60 * 60)
+
+        XCTAssertEqual(merged.map(\.date), ["2026-08-01", "2026-08-02"])
+        XCTAssertEqual(merged.map(\.totalTokens), [200, 300])
+        XCTAssertEqual(defaults.integer(forKey: "cached_usage_history_schema_version"), 3)
+        XCTAssertEqual(cache.usageTimeZone.secondsFromGMT(), 8 * 60 * 60)
+        XCTAssertFalse(
+            cache.needsCurrentMonthBaseline(
+                referenceDate: referenceDate,
+                timeZone: exportTimeZone
+            )
         )
 
-        XCTAssertEqual(merged.map(\.date), ["2026-07-01", "2026-07-02"])
-        XCTAssertEqual(merged.map(\.totalTokens), [200, 300])
-        XCTAssertFalse(cache.needsCurrentMonthBaseline(referenceDate: referenceDate))
-
-        let nextMonth = try XCTUnwrap(formatter.date(from: "2026-08-01T12:00:00Z"))
-        XCTAssertTrue(cache.needsCurrentMonthBaseline(referenceDate: nextMonth))
+        let nextMonth = try XCTUnwrap(formatter.date(from: "2026-08-31T16:30:00Z"))
+        XCTAssertTrue(
+            cache.needsCurrentMonthBaseline(
+                referenceDate: nextMonth,
+                timeZone: exportTimeZone
+            )
+        )
     }
 
     func testCurrencyDisplayTruncatesToMatchDeepSeekWeb() {

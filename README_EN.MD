@@ -2,7 +2,7 @@
 
 [中文 README](README.md) | The default README is now Chinese. This file keeps the English version of the same content.
 
-macOS menu bar app for monitoring DeepSeek V4 Flash / Pro balance, token usage, and billing. The current release is **v1.4.10**.
+macOS menu bar app for monitoring DeepSeek V4 Flash / Pro balance, token usage, and billing. The current release is **v1.4.11**.
 
 Requires **macOS 14 or later**; compatible with **Apple Silicon** and **Intel Macs** that can run macOS 14+.
 
@@ -26,7 +26,7 @@ Requires **macOS 14 or later**; compatible with **Apple Silicon** and **Intel Ma
 
 ## Features
 
-- **Menu bar dashboard** — balance, account availability, UTC+0 daily/monthly cost, V4 Flash / Pro usage, and a 7-day token trend.
+- **Menu bar dashboard** — balance, account availability, daily/monthly cost in the official export time zone, V4 Flash / Pro usage, and a 7-day token trend.
 - **Native WidgetKit desktop widget** — medium-size macOS widget with glass-style UI, account balance, daily/monthly spend, and model cost shortcuts.
 - **Model detail side panel** — click V4 Flash or V4 Pro to open a side panel aligned to the main dashboard size, with daily token and request charts.
 - **Deep link widget actions** — widget rows open the model detail panel directly, without opening the full dashboard first.
@@ -96,7 +96,7 @@ For this project only, the release script also clears stale DeepSeekMonitor syst
 4. Enable **原生小组件数据** if you want the macOS desktop widget to sync data.
 5. Add the **DeepSeek Monitor** widget from the macOS widget gallery.
 
-If DeepSeek's `/v1/usage` endpoint is unavailable for your account, use Settings to import an official Usage ZIP or enable the automatic export helper. Usage dates follow DeepSeek's UTC+0 reporting boundary, and platform data may lag by about five minutes.
+If DeepSeek's `/v1/usage` endpoint is unavailable for your account, use Settings to import an official Usage ZIP or enable the automatic export helper. Usage dates follow the time zone embedded in the official export, and platform data may lag by about five minutes.
 
 ## Architecture
 
