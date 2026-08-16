@@ -8,6 +8,8 @@
 
 /* Begin PBXBuildFile section */
 		0356C848AD61578B834E6375 /* WidgetKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = C4734D52D5297B3F39D6683B /* WidgetKit.framework */; };
+		A15100000000000000000002 /* SoftwareUpdateController.swift in Sources */ = {isa = PBXBuildFile; fileRef = A15100000000000000000001 /* SoftwareUpdateController.swift */; };
+		A15100000000000000000005 /* Sparkle in Frameworks */ = {isa = PBXBuildFile; productRef = A15100000000000000000004 /* Sparkle */; };
 		157876EA3DF52A57D80FD99C /* UsageChartView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 00E527F063F5481B8B3679EE /* UsageChartView.swift */; };
 		1D5AACD7A6F16E22162B8F58 /* DashboardViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = D4D6FB6A5DD5AC16F88D7736 /* DashboardViewModel.swift */; };
 		4262EFF19A0BE1E8B94B43E2 /* SwiftUI.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = B389AD86EFB1F59E5E61C9DA /* SwiftUI.framework */; };
@@ -82,6 +84,7 @@
 		8E6B1F20B2C6446B8246E2D6 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Resources/Assets.xcassets; sourceTree = SOURCE_ROOT; };
 		9742B7090456CB0E7A2771D1 /* DeepSeekMonitor.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = DeepSeekMonitor.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		99E4E267D91D02BAB224B395 /* ModelDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModelDetailView.swift; sourceTree = "<group>"; };
+		A15100000000000000000001 /* SoftwareUpdateController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SoftwareUpdateController.swift; sourceTree = "<group>"; };
 		A965E4FC5CEB60526F6D7E5D /* UsageAutoImportService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UsageAutoImportService.swift; sourceTree = "<group>"; };
 			B183A06159765DF92FD99182 /* LocalCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalCache.swift; sourceTree = "<group>"; };
 			B2C3D4E5F60718293A4B5C6D /* APIKeyStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APIKeyStore.swift; sourceTree = "<group>"; };
@@ -96,6 +99,14 @@
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
+		A15100000000000000000006 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A15100000000000000000005 /* Sparkle in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		E4A534CAF9ADE0F0B2D2E3A1 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
@@ -167,6 +178,7 @@
 					3A84F0FDAD229838E91D670D /* DeepSeekService.swift */,
 				1C245CA4735BC53C288D5FB7 /* DirectoryChangeMonitor.swift */,
 				B183A06159765DF92FD99182 /* LocalCache.swift */,
+				A15100000000000000000001 /* SoftwareUpdateController.swift */,
 				A965E4FC5CEB60526F6D7E5D /* UsageAutoImportService.swift */,
 				26B0F63737CE5ACCF98DA635 /* UsageCSVImporter.swift */,
 				DA93BC4E85FE586168824F6A /* UsageExportAutomationService.swift */,
@@ -210,6 +222,7 @@
 			buildConfigurationList = 8CC2D6426009B08C8D421DCA /* Build configuration list for PBXNativeTarget "DeepSeekMonitor" */;
 			buildPhases = (
 				7F91105A1FDFF5D39B56D408 /* Sources */,
+				A15100000000000000000006 /* Frameworks */,
 				351E64E6E11D4E8BAEA0E499 /* Resources */,
 				5F8D35A6E51A0B5C1072A74D /* Embed Foundation Extensions */,
 			);
@@ -220,6 +233,7 @@
 			);
 			name = DeepSeekMonitor;
 			packageProductDependencies = (
+				A15100000000000000000004 /* Sparkle */,
 			);
 			productName = DeepSeekMonitor;
 			productReference = 9742B7090456CB0E7A2771D1 /* DeepSeekMonitor.app */;
@@ -270,6 +284,9 @@
 			);
 			mainGroup = BFDF33F2FFEDF629D77D2CAA;
 			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				A15100000000000000000003 /* XCRemoteSwiftPackageReference "Sparkle" */,
+			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 6705CE088D47143FC4125A26 /* Products */;
 			projectDirPath = "";
@@ -318,6 +335,7 @@
 				5D5EB0A3776AF4838A37CAF2 /* ModelDetailView.swift in Sources */,
 				A08453EDD9813AF1B6408056 /* ModelDetailWindowController.swift in Sources */,
 				E291FF0FEFCD77FCD847B488 /* Models.swift in Sources */,
+				A15100000000000000000002 /* SoftwareUpdateController.swift in Sources */,
 				B4DC75385E759E6A24AB381E /* SettingsView.swift in Sources */,
 				D47ACB371D21D72E25ECB18A /* SettingsWindowController.swift in Sources */,
 				9F18CC1FF9D18DA6C874A726 /* Theme.swift in Sources */,
@@ -473,7 +491,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
-				CODE_SIGN_ENTITLEMENTS = DeepSeekMonitor.entitlements;
+				CODE_SIGN_ENTITLEMENTS = WidgetSupport.entitlements;
 				CODE_SIGN_IDENTITY = DeepSeekMonitorDev;
 				CODE_SIGN_STYLE = Manual;
 				COMBINE_HIDPI_IMAGES = YES;
@@ -518,7 +536,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
-				CODE_SIGN_ENTITLEMENTS = DeepSeekMonitor.entitlements;
+				CODE_SIGN_ENTITLEMENTS = WidgetSupport.entitlements;
 				CODE_SIGN_IDENTITY = DeepSeekMonitorDev;
 				CODE_SIGN_STYLE = Manual;
 				COMBINE_HIDPI_IMAGES = YES;
@@ -590,6 +608,25 @@
 			defaultConfigurationName = Debug;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		A15100000000000000000003 /* XCRemoteSwiftPackageReference "Sparkle" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/sparkle-project/Sparkle";
+			requirement = {
+				kind = exactVersion;
+				version = 2.9.5;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		A15100000000000000000004 /* Sparkle */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = A15100000000000000000003 /* XCRemoteSwiftPackageReference "Sparkle" */;
+			productName = Sparkle;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = A1A10A74F3CA661CBF8A82AE /* Project object */;
 }

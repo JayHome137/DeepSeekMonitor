@@ -6,6 +6,7 @@
 #   ./build.sh           # Release 构建 + DMG
 #   ./build.sh debug     # Debug 构建
 #   ./build.sh run       # 构建并运行
+#   ./build.sh signed-release # Release 构建 + DMG + 签名 Appcast
 #
 
 set -e
@@ -17,7 +18,10 @@ WIDGET_APPEX="WidgetSupport.appex"
 APP_BUNDLE_ID="com.deepseek.monitor"
 WIDGET_BUNDLE_ID="com.deepseek.monitor.widget"
 TEAM_ID="N5YV5FV235"
-MARKETING_VERSION="1.5.0"
+MARKETING_VERSION="1.5.1"
+GITHUB_REPOSITORY="JayHome137/DeepSeekMonitor"
+SPARKLE_KEY_ACCOUNT="com.deepseek.monitor"
+APPCAST_FILE="appcast.xml"
 
 # 颜色输出
 RED='\033[0;31m'
@@ -72,6 +76,126 @@ create_dmg() {
     rm -rf "$staging"
 
     info "DMG 构建完成: ${dmg_final}"
+}
+
+find_sparkle_tool() {
+    local tool_name="$1"
+    local package_tool="${BUILD_DIR}/artifacts/sparkle/Sparkle/bin/${tool_name}"
+
+    if [ -x "$package_tool" ]; then
+        echo "$package_tool"
+        return 0
+    fi
+
+    local derived_tool
+    derived_tool=$(find "$HOME/Library/Developer/Xcode/DerivedData" \
+        -path "*/SourcePackages/artifacts/sparkle/Sparkle/bin/${tool_name}" \
+        -type f -perm -111 -print -quit 2>/dev/null || true)
+    if [ -n "$derived_tool" ]; then
+        echo "$derived_tool"
+        return 0
+    fi
+
+    error "未找到 Sparkle 工具 ${tool_name}，请先运行 swift package resolve"
+    return 1
+}
+
+validate_update_signing_configuration() {
+    local key_tool
+    local configured_public_key
+    local keychain_public_key
+    local feed_url
+    local required_flag
+
+    key_tool=$(find_sparkle_tool "generate_keys")
+    configured_public_key=$(/usr/libexec/PlistBuddy \
+        -c "Print SUPublicEDKey" "Resources/Info.plist")
+    keychain_public_key=$("$key_tool" --account "$SPARKLE_KEY_ACCOUNT" -p | tr -d '\r\n')
+    feed_url=$(/usr/libexec/PlistBuddy \
+        -c "Print SUFeedURL" "Resources/Info.plist")
+
+    if [ "$configured_public_key" != "$keychain_public_key" ]; then
+        error "Info.plist 公钥与本机 Sparkle 钥匙串密钥不匹配"
+        return 1
+    fi
+
+    case "$feed_url" in
+        https://*) ;;
+        *)
+            error "Sparkle Feed 必须使用 HTTPS"
+            return 1
+            ;;
+    esac
+
+    for required_flag in \
+        SURequireSignedFeed \
+        SUVerifyUpdateBeforeExtraction \
+        SUEnableInstallerLauncherService; do
+        if [ "$(/usr/libexec/PlistBuddy -c "Print ${required_flag}" "Resources/Info.plist")" != "true" ]; then
+            error "${required_flag} 必须启用"
+            return 1
+        fi
+    done
+
+    if [ "$(/usr/libexec/PlistBuddy -c "Print :SUAllowedURLSchemes:0" "Resources/Info.plist")" != "https" ]; then
+        error "Sparkle 仅允许 HTTPS URL Scheme"
+        return 1
+    fi
+}
+
+create_signed_appcast() {
+    local dmg_file="${PROJECT_NAME}-v${MARKETING_VERSION}.dmg"
+    local generate_tool
+    local sign_tool
+    local release_download_prefix
+    local release_page_url
+    local generated_appcast
+    local appcast_staging
+
+    if [ ! -f "$dmg_file" ]; then
+        error "未找到 ${dmg_file}，请先运行 ./build.sh release"
+        exit 1
+    fi
+
+    validate_update_signing_configuration
+    generate_tool=$(find_sparkle_tool "generate_appcast")
+    sign_tool=$(find_sparkle_tool "sign_update")
+    release_download_prefix="https://github.com/${GITHUB_REPOSITORY}/releases/download/v${MARKETING_VERSION}/"
+    release_page_url="https://github.com/${GITHUB_REPOSITORY}/releases/tag/v${MARKETING_VERSION}"
+    appcast_staging=$(mktemp -d "/tmp/${PROJECT_NAME}-appcast.XXXXXX")
+    trap 'rm -rf "$appcast_staging"' EXIT
+
+    cp "$dmg_file" "$appcast_staging/"
+    if [ -f "$APPCAST_FILE" ]; then
+        cp "$APPCAST_FILE" "$appcast_staging/"
+    fi
+
+    "$generate_tool" \
+        --account "$SPARKLE_KEY_ACCOUNT" \
+        --download-url-prefix "$release_download_prefix" \
+        --link "$release_page_url" \
+        --maximum-versions 3 \
+        --maximum-deltas 0 \
+        "$appcast_staging"
+
+    generated_appcast="$appcast_staging/$APPCAST_FILE"
+    if [ ! -f "$generated_appcast" ]; then
+        error "Sparkle 未生成 ${APPCAST_FILE}"
+        exit 1
+    fi
+
+    xmllint --noout "$generated_appcast"
+    "$sign_tool" --account "$SPARKLE_KEY_ACCOUNT" --verify "$generated_appcast"
+    grep -Fq "sparkle:edSignature" "$generated_appcast"
+    grep -Fq "${release_download_prefix}${dmg_file}" "$generated_appcast"
+
+    cp "$generated_appcast" "$APPCAST_FILE"
+    rm -rf "$appcast_staging"
+    trap - EXIT
+
+    info "签名 Appcast 已生成: ${APPCAST_FILE}"
+    info "Release 下载地址: ${release_download_prefix}${dmg_file}"
+    info "DMG SHA-256: $(shasum -a 256 "$dmg_file" | awk '{print $1}')"
 }
 
 kill_running_app() {
@@ -268,10 +392,11 @@ copy_widget_resources() {
 
 sign_bundle() {
     APP_BUNDLE="$1"
-    ENTITLEMENTS="DeepSeekMonitor.entitlements"
+    APP_ENTITLEMENTS="DeepSeekMonitor.entitlements"
+    WIDGET_ENTITLEMENTS="WidgetSupport.entitlements"
 
-    if [ ! -f "$ENTITLEMENTS" ]; then
-        warn "未找到 Entitlements 文件 ($ENTITLEMENTS)，跳过签名"
+    if [ ! -f "$APP_ENTITLEMENTS" ] || [ ! -f "$WIDGET_ENTITLEMENTS" ]; then
+        warn "未找到 App/Widget Entitlements 文件，跳过签名"
         return
     fi
 
@@ -282,7 +407,7 @@ sign_bundle() {
         CODE_SIGN_IDENTITY=$(security find-identity -v -p codesigning 2>/dev/null | awk -F '"' '/Apple Development|Mac Developer|Developer ID Application/ { print $2; exit }')
     fi
 
-    SIGN_ARGS=(--force --timestamp=none --entitlements "$ENTITLEMENTS")
+    SIGN_ARGS=(--force --timestamp=none)
     if [ -n "$CODE_SIGN_IDENTITY" ]; then
         SIGN_ARGS+=(--sign "$CODE_SIGN_IDENTITY")
         info "使用签名身份: $CODE_SIGN_IDENTITY"
@@ -291,14 +416,39 @@ sign_bundle() {
         warn "未找到 Apple Development / Mac Developer / Developer ID Application 签名身份，降级使用 ad-hoc 签名"
     fi
 
+    SPARKLE_FRAMEWORK="${APP_BUNDLE}/Contents/Frameworks/Sparkle.framework"
+    if [ -d "$SPARKLE_FRAMEWORK" ]; then
+        SPARKLE_VERSION_DIR="${SPARKLE_FRAMEWORK}/Versions/B"
+        info "签名 Sparkle 更新组件..."
+
+        for component in \
+            "${SPARKLE_VERSION_DIR}/XPCServices/Installer.xpc" \
+            "${SPARKLE_VERSION_DIR}/Autoupdate" \
+            "${SPARKLE_VERSION_DIR}/Updater.app"; do
+            if [ -e "$component" ]; then
+                codesign "${SIGN_ARGS[@]}" --options runtime "$component"
+            fi
+        done
+
+        SPARKLE_DOWNLOADER="${SPARKLE_VERSION_DIR}/XPCServices/Downloader.xpc"
+        if [ -e "$SPARKLE_DOWNLOADER" ]; then
+            codesign "${SIGN_ARGS[@]}" --options runtime \
+                --preserve-metadata=entitlements "$SPARKLE_DOWNLOADER"
+        fi
+
+        codesign "${SIGN_ARGS[@]}" --options runtime "$SPARKLE_FRAMEWORK"
+    fi
+
     if [ -d "$APPEX_DIR" ]; then
         info "签名 Widget Extension..."
-        codesign "${SIGN_ARGS[@]}" "$APPEX_DIR" || \
+        codesign "${SIGN_ARGS[@]}" --options runtime \
+            --entitlements "$WIDGET_ENTITLEMENTS" "$APPEX_DIR" || \
             warn "Widget Extension 签名失败（非致命）"
     fi
 
     info "签名主 App Bundle..."
-    codesign "${SIGN_ARGS[@]}" "$APP_BUNDLE" || \
+    codesign "${SIGN_ARGS[@]}" --options runtime \
+        --entitlements "$APP_ENTITLEMENTS" "$APP_BUNDLE" || \
         warn "主 App 签名失败（非致命）"
 
     info "签名完成"
@@ -508,6 +658,16 @@ case "$MODE" in
         info "运行: open ${PROJECT_NAME}.app"
         ;;
 
+    appcast)
+        info "生成并验证 Sparkle 签名 Appcast..."
+        create_signed_appcast
+        ;;
+
+    signed-release)
+        "$0" release
+        "$0" appcast
+        ;;
+
     run)
         info "构建并运行..."
         build_debug_xcode_and_run
@@ -587,7 +747,7 @@ case "$MODE" in
         ;;
 
     *)
-        echo "用法: $0 {debug|release|run|icon|restart|dmg}"
+        echo "用法: $0 {debug|release|appcast|signed-release|run|icon|restart|dmg}"
         exit 1
         ;;
 esac

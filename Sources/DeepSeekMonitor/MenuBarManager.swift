@@ -19,9 +19,13 @@ final class MenuBarManager: NSObject {
     private var notificationObservers: [NSObjectProtocol] = []
 
     let viewModel = DashboardViewModel()
+    private let softwareUpdateController = SoftwareUpdateController()
 
     private lazy var settingsWindowController: SettingsWindowController = {
-        SettingsWindowController(viewModel: viewModel)
+        SettingsWindowController(
+            viewModel: viewModel,
+            softwareUpdateController: softwareUpdateController
+        )
     }()
 
     private lazy var modelDetailWindowController: ModelDetailWindowController = {

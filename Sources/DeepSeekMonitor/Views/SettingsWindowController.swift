@@ -9,15 +9,23 @@ import SwiftUI
 final class SettingsWindowController: NSObject {
     private var window: NSWindow?
     private let viewModel: DashboardViewModel
+    private let softwareUpdateController: SoftwareUpdateController
     private let sideGap: CGFloat = 14
 
-    init(viewModel: DashboardViewModel) {
+    init(
+        viewModel: DashboardViewModel,
+        softwareUpdateController: SoftwareUpdateController
+    ) {
         self.viewModel = viewModel
+        self.softwareUpdateController = softwareUpdateController
     }
 
     @MainActor
     private func makeWindow() -> NSWindow {
-        let settingsView = SettingsView(viewModel: viewModel)
+        let settingsView = SettingsView(
+            viewModel: viewModel,
+            softwareUpdateController: softwareUpdateController
+        )
         let hostingController = NSHostingController(rootView: settingsView)
         hostingController.view.wantsLayer = true
         hostingController.view.layer?.backgroundColor = NSColor.clear.cgColor

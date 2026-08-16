@@ -68,6 +68,9 @@ final class UsageExportAutomationService: NSObject, ObservableObject {
     private static let usageURL = URL(string: "https://platform.deepseek.com/usage")!
     private static let loginURL = URL(string: "https://platform.deepseek.com/sign_in")!
     private static let defaultAutoExportInterval: TimeInterval = 300
+    private static let maximumDownloadByteCount = UsageAutoImportService.maximumArchiveByteCount
+    private static let maximumDataURLCharacterCount =
+        ((UsageAutoImportService.maximumArchiveByteCount + 2) / 3) * 4 + 256
 
     private var timer: Timer?
     private var window: NSWindow?
@@ -213,7 +216,7 @@ final class UsageExportAutomationService: NSObject, ObservableObject {
         configuration.userContentController.addUserScript(WKUserScript(
             source: downloadBridgeScript,
             injectionTime: .atDocumentStart,
-            forMainFrameOnly: false
+            forMainFrameOnly: true
         ))
 
         let webView = WKWebView(frame: NSRect(x: 0, y: 0, width: 1180, height: 860), configuration: configuration)
@@ -818,6 +821,8 @@ final class UsageExportAutomationService: NSObject, ObservableObject {
         (() => {
           if (window.__deepseekExportBridgeInstalled) return;
           window.__deepseekExportBridgeInstalled = true;
+          const maximumDownloadBytes = \(Self.maximumDownloadByteCount);
+          const maximumDataURLCharacters = \(Self.maximumDataURLCharacterCount);
 
           const guessedFileName = (raw, fallback) => {
             const safe = (raw || '').trim();
@@ -826,22 +831,25 @@ final class UsageExportAutomationService: NSObject, ObservableObject {
           };
 
           const postDataUrl = (filename, dataUrl, taskID) => {
+            if (typeof dataUrl !== 'string' || dataUrl.length > maximumDataURLCharacters) {
+              return false;
+            }
             window.webkit.messageHandlers.\(UsageExportScriptMessage.download).postMessage({
               filename: guessedFileName(filename, 'usage-export.zip'),
               dataUrl,
               taskID: taskID || ''
             });
+            return true;
           };
 
           const postBlob = async (blob, filename, taskID) => {
-            if (!blob) return false;
+            if (!(blob instanceof Blob) || blob.size > maximumDownloadBytes) return false;
             const capturedTaskID = taskID || window.__deepseekActiveExportTaskID || '';
             return await new Promise((resolve) => {
               try {
                 const reader = new FileReader();
                 reader.onloadend = () => {
-                  postDataUrl(filename, reader.result, capturedTaskID);
-                  resolve(true);
+                  resolve(postDataUrl(filename, reader.result, capturedTaskID));
                 };
                 reader.onerror = () => resolve(false);
                 reader.readAsDataURL(blob);
@@ -883,8 +891,7 @@ final class UsageExportAutomationService: NSObject, ObservableObject {
               }
 
               if (href.startsWith('data:')) {
-                postDataUrl(filename, href, taskID);
-                return true;
+                return postDataUrl(filename, href, taskID);
               }
             } catch (error) {
               console.error('deepseek export bridge failed', error);
@@ -926,7 +933,7 @@ final class UsageExportAutomationService: NSObject, ObservableObject {
           const originalCreateObjectURL = URL.createObjectURL.bind(URL);
           URL.createObjectURL = function(object) {
             const url = originalCreateObjectURL(object);
-            if (object instanceof Blob) {
+            if (object instanceof Blob && object.size <= maximumDownloadBytes) {
               blobStore.set(url, object);
             }
             return url;
@@ -956,6 +963,10 @@ final class UsageExportAutomationService: NSObject, ObservableObject {
               const contentType = response.headers.get('content-type') || '';
               const disposition = response.headers.get('content-disposition') || '';
               if (shouldCapture(requestUrl || response.url, contentType, disposition)) {
+                const contentLength = Number(response.headers.get('content-length') || '');
+                if (Number.isFinite(contentLength) && contentLength > maximumDownloadBytes) {
+                  return response;
+                }
                 const blob = await response.clone().blob();
                 const matchedName = /filename\\*=UTF-8''([^;]+)|filename="?([^"]+)"?/i.exec(disposition || '');
                 const fileName = decodeURIComponent((matchedName && (matchedName[1] || matchedName[2])) || '');
@@ -990,12 +1001,14 @@ final class UsageExportAutomationService: NSObject, ObservableObject {
                 }
 
                 if (this.response instanceof ArrayBuffer) {
+                  if (this.response.byteLength > maximumDownloadBytes) return;
                   const blob = new Blob([this.response], { type: contentType || 'application/octet-stream' });
                   postBlob(blob, url.split('/').pop() || 'usage-export.zip', taskID);
                   return;
                 }
 
                 if (typeof this.responseText === 'string') {
+                  if (this.responseText.length > maximumDataURLCharacters) return;
                   const blob = new Blob([this.responseText], { type: contentType || 'application/json' });
                   postBlob(blob, url.split('/').pop() || 'usage-export.zip', taskID);
                 }
@@ -1013,22 +1026,35 @@ final class UsageExportAutomationService: NSObject, ObservableObject {
     private func saveBridgedDownload(filename: String, dataURL: String, taskID: String) {
         guard automationState == .waitingForDownload,
               activeExportTask?.id.uuidString == taskID else { return }
+        guard dataURL.utf8.count <= Self.maximumDataURLCharacterCount else {
+            finishAutomationFailure("导出内容超过 64 MiB 安全上限")
+            return
+        }
         guard let commaIndex = dataURL.firstIndex(of: ",") else {
             finishAutomationFailure("导出内容解析失败：数据格式无效")
             return
         }
 
         let meta = String(dataURL[..<commaIndex]).lowercased()
-        let payload = String(dataURL[dataURL.index(after: commaIndex)...])
+        guard meta.utf8.count <= 256 else {
+            finishAutomationFailure("导出内容解析失败：数据格式无效")
+            return
+        }
+        let payloadSlice = dataURL[dataURL.index(after: commaIndex)...]
 
         let data: Data?
         if meta.contains(";base64") {
-            data = Data(base64Encoded: payload)
+            let maximumBase64CharacterCount = ((Self.maximumDownloadByteCount + 2) / 3) * 4
+            guard payloadSlice.utf8.count <= maximumBase64CharacterCount else {
+                finishAutomationFailure("导出内容超过 64 MiB 安全上限")
+                return
+            }
+            data = Data(base64Encoded: String(payloadSlice))
         } else {
-            data = payload.removingPercentEncoding?.data(using: .utf8)
+            data = String(payloadSlice).removingPercentEncoding?.data(using: .utf8)
         }
 
-        guard let data else {
+        guard let data, data.count <= Self.maximumDownloadByteCount else {
             finishAutomationFailure("导出内容保存失败")
             return
         }
@@ -1085,6 +1111,24 @@ final class UsageExportAutomationService: NSObject, ObservableObject {
         return signatures.contains { data.starts(with: $0) }
     }
 
+    nonisolated static func isAllowedPlatformURL(_ url: URL?) -> Bool {
+        guard let url,
+              url.scheme?.lowercased() == "https",
+              url.host?.lowercased() == "platform.deepseek.com",
+              url.port == nil || url.port == 443,
+              url.user == nil,
+              url.password == nil else {
+            return false
+        }
+        return true
+    }
+
+    nonisolated static func isAllowedPlatformOrigin(scheme: String, host: String, port: Int) -> Bool {
+        scheme.lowercased() == "https" &&
+            host.lowercased() == "platform.deepseek.com" &&
+            (port == 0 || port == 443)
+    }
+
     private func exportFailureMessage(from data: Data) -> String? {
         guard let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
             return nil
@@ -1102,8 +1146,52 @@ final class UsageExportAutomationService: NSObject, ObservableObject {
 }
 
 extension UsageExportAutomationService: WKNavigationDelegate, WKUIDelegate, WKDownloadDelegate, WKScriptMessageHandler {
+    func webView(
+        _ webView: WKWebView,
+        decidePolicyFor navigationAction: WKNavigationAction,
+        decisionHandler: @escaping (WKNavigationActionPolicy) -> Void
+    ) {
+        guard navigationAction.targetFrame?.isMainFrame == true else {
+            decisionHandler(.allow)
+            return
+        }
+        guard Self.isAllowedPlatformURL(navigationAction.request.url) else {
+            decisionHandler(.cancel)
+            if activeExportTask != nil {
+                finishAutomationFailure("已阻止非 DeepSeek 官方页面导航")
+            } else {
+                statusMessage = "已阻止非 DeepSeek 官方页面导航"
+            }
+            return
+        }
+        decisionHandler(.allow)
+    }
+
+    func webView(
+        _ webView: WKWebView,
+        decidePolicyFor navigationResponse: WKNavigationResponse,
+        decisionHandler: @escaping (WKNavigationResponsePolicy) -> Void
+    ) {
+        guard navigationResponse.isForMainFrame else {
+            decisionHandler(.allow)
+            return
+        }
+        guard Self.isAllowedPlatformURL(navigationResponse.response.url) else {
+            decisionHandler(.cancel)
+            if activeExportTask != nil {
+                finishAutomationFailure("已阻止非 DeepSeek 官方页面响应")
+            } else {
+                statusMessage = "已阻止非 DeepSeek 官方页面响应"
+            }
+            return
+        }
+        decisionHandler(.allow)
+    }
+
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
-        if webView.url?.absoluteString.contains("/usage") == true {
+        guard let url = webView.url, Self.isAllowedPlatformURL(url) else { return }
+
+        if url.path == "/usage" || url.path == "/usage/" {
             isLoggedIn = true
             statusMessage = pendingExportRequest ? "页面已打开，正在尝试导出..." : "已连接到 usage 页面"
             if pendingExportRequest {
@@ -1112,7 +1200,7 @@ extension UsageExportAutomationService: WKNavigationDelegate, WKUIDelegate, WKDo
             return
         }
 
-        if webView.url?.absoluteString.contains("sign_in") == true {
+        if url.path == "/sign_in" || url.path == "/sign_in/" {
             isLoggedIn = false
             resetAutomationState()
             statusMessage = "检测到需要重新登录，自动导出暂停等待手动登录"
@@ -1163,6 +1251,12 @@ extension UsageExportAutomationService: WKNavigationDelegate, WKUIDelegate, WKDo
             completionHandler(nil)
             return
         }
+        let expectedContentLength = response.expectedContentLength
+        guard expectedContentLength < 0 || expectedContentLength <= Int64(Self.maximumDownloadByteCount) else {
+            completionHandler(nil)
+            finishAutomationFailure("下载文件超过 64 MiB 安全上限")
+            return
+        }
         let incomingFolder = try? UsageAutoImportService.incomingFolderURL()
         let safeName = normalizedDownloadFileName(from: suggestedFilename)
         let finalDestination = incomingFolder?.appendingPathComponent(safeName)
@@ -1194,21 +1288,20 @@ extension UsageExportAutomationService: WKNavigationDelegate, WKUIDelegate, WKDo
             return
         }
         guard let temporaryDestination = activeDownloadDestination,
-              let finalDestination = activeDownloadFinalDestination,
-              let data = try? Data(contentsOf: temporaryDestination),
-              Self.isZIPArchiveData(data) else {
+              let finalDestination = activeDownloadFinalDestination else {
             let temporaryDestination = activeDownloadDestination
-            let reason: String
-            if let temporaryDestination = activeDownloadDestination {
-                let data = try? Data(contentsOf: temporaryDestination)
-                reason = data.flatMap(exportFailureMessage(from:)) ?? "服务器返回的内容不是有效 ZIP"
-            } else {
-                reason = "未找到下载文件"
-            }
             resetAutomationState(cancelDownload: false)
             if let temporaryDestination {
                 try? FileManager.default.removeItem(at: temporaryDestination)
             }
+            statusMessage = "DeepSeek 导出失败：未找到下载文件"
+            lastDownloadFileName = nil
+            return
+        }
+
+        if let reason = downloadedArchiveFailureReason(at: temporaryDestination) {
+            resetAutomationState(cancelDownload: false)
+            try? FileManager.default.removeItem(at: temporaryDestination)
             statusMessage = "DeepSeek 导出失败：\(reason)"
             lastDownloadFileName = nil
             return
@@ -1254,7 +1347,40 @@ extension UsageExportAutomationService: WKNavigationDelegate, WKUIDelegate, WKDo
         download.delegate = self
     }
 
+    private func downloadedArchiveFailureReason(at fileURL: URL) -> String? {
+        let keys: Set<URLResourceKey> = [.isRegularFileKey, .isSymbolicLinkKey, .fileSizeKey]
+        guard let values = try? fileURL.resourceValues(forKeys: keys),
+              values.isRegularFile == true,
+              values.isSymbolicLink != true,
+              let fileSize = values.fileSize,
+              fileSize >= 0 else {
+            return "下载文件类型无效"
+        }
+        guard fileSize <= Self.maximumDownloadByteCount else {
+            return "下载文件超过 64 MiB 安全上限"
+        }
+        guard let handle = try? FileHandle(forReadingFrom: fileURL) else {
+            return "无法读取下载文件"
+        }
+        defer { try? handle.close() }
+        let sample = (try? handle.read(upToCount: 64 * 1024)) ?? Data()
+        guard Self.isZIPArchiveData(sample) else {
+            return exportFailureMessage(from: sample) ?? "服务器返回的内容不是有效 ZIP"
+        }
+        return nil
+    }
+
     func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
+        let origin = message.frameInfo.securityOrigin
+        guard message.frameInfo.isMainFrame,
+              Self.isAllowedPlatformOrigin(
+                  scheme: origin.protocol,
+                  host: origin.host,
+                  port: origin.port
+              ) else {
+            return
+        }
+
         if message.name == UsageExportScriptMessage.download,
            let body = message.body as? [String: Any],
            let dataURL = body["dataUrl"] as? String,

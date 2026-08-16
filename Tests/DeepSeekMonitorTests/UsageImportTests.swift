@@ -587,6 +587,98 @@ final class UsageImportTests: XCTestCase {
         XCTAssertThrowsError(try UsageAutoImportService.prepareImportCandidate(from: jsonURL))
     }
 
+    func testUsageExportAllowsOnlyOfficialHTTPSPlatformURLAndOrigin() throws {
+        XCTAssertTrue(UsageExportAutomationService.isAllowedPlatformURL(
+            URL(string: "https://platform.deepseek.com/usage")
+        ))
+        XCTAssertTrue(UsageExportAutomationService.isAllowedPlatformURL(
+            URL(string: "https://platform.deepseek.com:443/sign_in?redirect=/usage")
+        ))
+
+        let rejectedURLs = [
+            "http://platform.deepseek.com/usage",
+            "https://platform.deepseek.com.evil.example/usage",
+            "https://platform.deepseek.com@evil.example/usage",
+            "https://platform.deepseek.com:8443/usage",
+            "https://api.deepseek.com/usage",
+        ]
+        for rawURL in rejectedURLs {
+            XCTAssertFalse(
+                UsageExportAutomationService.isAllowedPlatformURL(try XCTUnwrap(URL(string: rawURL))),
+                rawURL
+            )
+        }
+
+        XCTAssertTrue(UsageExportAutomationService.isAllowedPlatformOrigin(
+            scheme: "https",
+            host: "platform.deepseek.com",
+            port: 0
+        ))
+        XCTAssertTrue(UsageExportAutomationService.isAllowedPlatformOrigin(
+            scheme: "HTTPS",
+            host: "PLATFORM.DEEPSEEK.COM",
+            port: 443
+        ))
+        XCTAssertFalse(UsageExportAutomationService.isAllowedPlatformOrigin(
+            scheme: "http",
+            host: "platform.deepseek.com",
+            port: 0
+        ))
+        XCTAssertFalse(UsageExportAutomationService.isAllowedPlatformOrigin(
+            scheme: "https",
+            host: "platform.deepseek.com.evil.example",
+            port: 443
+        ))
+        XCTAssertFalse(UsageExportAutomationService.isAllowedPlatformOrigin(
+            scheme: "https",
+            host: "platform.deepseek.com",
+            port: 8443
+        ))
+    }
+
+    func testZIPPathTraversalAndBackslashPathsAreRejected() throws {
+        let directory = try makeTemporaryDirectory()
+        for (index, entryName) in ["../amount.csv", "/absolute/amount.csv", "folder\\amount.csv"].enumerated() {
+            let archiveURL = try write(
+                makeStoredZIP(entryName: entryName, contents: Data("x".utf8)),
+                named: "invalid-path-\(index).zip",
+                in: directory
+            )
+            XCTAssertThrowsError(try UsageAutoImportService.validateZIPArchive(at: archiveURL), entryName)
+        }
+    }
+
+    func testZIPUnixSymbolicLinkIsRejected() throws {
+        let directory = try makeTemporaryDirectory()
+        let archiveURL = try write(
+            makeStoredZIP(
+                entryName: "amount-2026-08-01_2026-08-15.csv",
+                contents: Data("../../outside.csv".utf8),
+                versionMadeBy: 0x0314,
+                externalAttributes: UInt32(0o120777) << 16
+            ),
+            named: "symlink.zip",
+            in: directory
+        )
+
+        XCTAssertThrowsError(try UsageAutoImportService.validateZIPArchive(at: archiveURL))
+    }
+
+    func testZIPDeclaredOversizedFileIsRejectedBeforeExtraction() throws {
+        let directory = try makeTemporaryDirectory()
+        let archiveURL = try write(
+            makeStoredZIP(
+                entryName: "amount-2026-08-01_2026-08-15.csv",
+                contents: Data(),
+                declaredUncompressedSize: UInt32(128 * 1024 * 1024 + 1)
+            ),
+            named: "oversized.zip",
+            in: directory
+        )
+
+        XCTAssertThrowsError(try UsageAutoImportService.validateZIPArchive(at: archiveURL))
+    }
+
     func testRecordsOutsideDeclaredExportRangeAreRejected() {
         let range = UsageAutoImportService.ExportDateRange(
             startDate: "2026-07-20",
@@ -806,8 +898,84 @@ final class UsageImportTests: XCTestCase {
         XCTAssertEqual(process.terminationStatus, 0)
     }
 
+    private func makeStoredZIP(
+        entryName: String,
+        contents: Data,
+        declaredUncompressedSize: UInt32? = nil,
+        versionMadeBy: UInt16 = 0x0014,
+        externalAttributes: UInt32 = 0
+    ) -> Data {
+        let name = Data(entryName.utf8)
+        let compressedSize = UInt32(contents.count)
+        let uncompressedSize = declaredUncompressedSize ?? compressedSize
+
+        var archive = Data()
+        archive.appendZIPUInt32(0x04034B50)
+        archive.appendZIPUInt16(20)
+        archive.appendZIPUInt16(0)
+        archive.appendZIPUInt16(0)
+        archive.appendZIPUInt16(0)
+        archive.appendZIPUInt16(0)
+        archive.appendZIPUInt32(0)
+        archive.appendZIPUInt32(compressedSize)
+        archive.appendZIPUInt32(uncompressedSize)
+        archive.appendZIPUInt16(UInt16(name.count))
+        archive.appendZIPUInt16(0)
+        archive.append(name)
+        archive.append(contents)
+
+        let centralDirectoryOffset = UInt32(archive.count)
+        archive.appendZIPUInt32(0x02014B50)
+        archive.appendZIPUInt16(versionMadeBy)
+        archive.appendZIPUInt16(20)
+        archive.appendZIPUInt16(0)
+        archive.appendZIPUInt16(0)
+        archive.appendZIPUInt16(0)
+        archive.appendZIPUInt16(0)
+        archive.appendZIPUInt32(0)
+        archive.appendZIPUInt32(compressedSize)
+        archive.appendZIPUInt32(uncompressedSize)
+        archive.appendZIPUInt16(UInt16(name.count))
+        archive.appendZIPUInt16(0)
+        archive.appendZIPUInt16(0)
+        archive.appendZIPUInt16(0)
+        archive.appendZIPUInt16(0)
+        archive.appendZIPUInt32(externalAttributes)
+        archive.appendZIPUInt32(0)
+        archive.append(name)
+
+        let centralDirectorySize = UInt32(archive.count) - centralDirectoryOffset
+        archive.appendZIPUInt32(0x06054B50)
+        archive.appendZIPUInt16(0)
+        archive.appendZIPUInt16(0)
+        archive.appendZIPUInt16(1)
+        archive.appendZIPUInt16(1)
+        archive.appendZIPUInt32(centralDirectorySize)
+        archive.appendZIPUInt32(centralDirectoryOffset)
+        archive.appendZIPUInt16(0)
+        return archive
+    }
+
     private func decimal(_ value: String) -> Decimal {
         Decimal(string: value, locale: Locale(identifier: "en_US_POSIX"))!
+    }
+}
+
+private extension Data {
+    mutating func appendZIPUInt16(_ value: UInt16) {
+        append(contentsOf: [
+            UInt8(value & 0x00FF),
+            UInt8((value >> 8) & 0x00FF),
+        ])
+    }
+
+    mutating func appendZIPUInt32(_ value: UInt32) {
+        append(contentsOf: [
+            UInt8(value & 0x000000FF),
+            UInt8((value >> 8) & 0x000000FF),
+            UInt8((value >> 16) & 0x000000FF),
+            UInt8((value >> 24) & 0x000000FF),
+        ])
     }
 }
 

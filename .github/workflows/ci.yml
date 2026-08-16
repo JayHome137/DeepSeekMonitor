@@ -4,11 +4,43 @@ on:
   push:
   pull_request:
 
+permissions:
+  contents: read
+
 jobs:
   test-and-build:
     runs-on: macos-26
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+
+      - name: Validate software update trust configuration
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          info_plist="Resources/Info.plist"
+          public_key=$(/usr/libexec/PlistBuddy -c "Print SUPublicEDKey" "$info_plist")
+          feed_url=$(/usr/libexec/PlistBuddy -c "Print SUFeedURL" "$info_plist")
+          decoded_key_length=$(printf '%s' "$public_key" | /usr/bin/base64 -D | wc -c | tr -d '[:space:]')
+
+          test "$decoded_key_length" = "32"
+          test "$feed_url" = "https://raw.githubusercontent.com/JayHome137/DeepSeekMonitor/main/appcast.xml"
+          test "$(/usr/libexec/PlistBuddy -c 'Print SURequireSignedFeed' "$info_plist")" = "true"
+          test "$(/usr/libexec/PlistBuddy -c 'Print SUVerifyUpdateBeforeExtraction' "$info_plist")" = "true"
+          test "$(/usr/libexec/PlistBuddy -c 'Print SUEnableInstallerLauncherService' "$info_plist")" = "true"
+          test "$(/usr/libexec/PlistBuddy -c 'Print :SUAllowedURLSchemes:0' "$info_plist")" = "https"
+
+          test -f appcast.xml
+          xmllint --noout appcast.xml
+          grep -Fq 'sparkle:edSignature=' appcast.xml
+          grep -Fq '<!-- sparkle-signatures:' appcast.xml
+          grep -Eq '^edSignature: [A-Za-z0-9+/=]+$' appcast.xml
+          grep -Eq 'url="https://github.com/JayHome137/DeepSeekMonitor/releases/download/v[0-9]' appcast.xml
+
+          if git ls-files | grep -Eiq '(^|/)(sparkle.*private|private.*sparkle|ed25519.*private)(/|\.|$)'; then
+            echo "A Sparkle private-key file is tracked by git"
+            exit 1
+          fi
 
       - name: Run Swift tests
         run: swift test
