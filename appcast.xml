@@ -1,0 +1,22 @@
+<?xml version="1.0" standalone="yes"?>
+<!-- sparkle-sign-warning:
+IMPORTANT: This file was signed by Sparkle. Any modifications to this file requires re-signing this file with generate_appcast or sign_update! The signed signature will be embedded at the end of this file.
+-->
+<rss xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle" version="2.0">
+    <channel>
+        <title>DeepSeekMonitor</title>
+        <item>
+            <title>1.5.1</title>
+            <pubDate>Sun, 16 Aug 2026 12:26:18 +0800</pubDate>
+            <link>https://github.com/JayHome137/DeepSeekMonitor/releases/tag/v1.5.1</link>
+            <sparkle:version>34</sparkle:version>
+            <sparkle:shortVersionString>1.5.1</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+            <enclosure url="https://github.com/JayHome137/DeepSeekMonitor/releases/download/v1.5.1/DeepSeekMonitor-v1.5.1.dmg" length="2889184" type="application/octet-stream" sparkle:edSignature="4tPbxZq5RpYK5/GTKIMYZM8+vsmO/lKd4yoit/4AMirQjD5PwKvuWhouAQVGtt3o02e5biwDHnncLmenh1jLDQ=="/>
+        </item>
+    </channel>
+</rss>
+<!-- sparkle-signatures:
+edSignature: xjaAILqP+9O9uCVIFTWU2KNksEJ06XWebTzVIrbKQiyI8vgRAfAV8eyLXNGbbu0GOr9R/dKHHObj89OujiajCw==
+length: 1149
+-->

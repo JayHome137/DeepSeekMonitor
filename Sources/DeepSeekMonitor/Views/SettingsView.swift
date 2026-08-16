@@ -12,6 +12,7 @@ import ServiceManagement
 
 struct SettingsView: View {
     @ObservedObject var viewModel: DashboardViewModel
+    @ObservedObject var softwareUpdateController: SoftwareUpdateController
     @ObservedObject private var exportAutomation = UsageExportAutomationService.shared
     @Environment(\.colorScheme) private var colorScheme
 
@@ -81,6 +82,9 @@ struct SettingsView: View {
                 launchAtLoginSection
                 Divider().padding(.vertical, 16)
 
+                // ── Software Update ──
+                softwareUpdateSection
+                Divider().padding(.vertical, 16)
 
                 // ── Refresh ──
                 refreshIntervalSection
@@ -197,6 +201,77 @@ struct SettingsView: View {
             .toggleStyle(.switch)
             .scaleEffect(0.8, anchor: .leading)
             .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+
+    private var softwareUpdateSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Label("软件更新", systemImage: "arrow.triangle.2.circlepath")
+                .font(.subheadline)
+                .fontWeight(.medium)
+
+            HStack(spacing: 10) {
+                Button(action: softwareUpdateController.checkForUpdates) {
+                    HStack(spacing: 5) {
+                        if softwareUpdateController.isChecking {
+                            ProgressView()
+                                .controlSize(.small)
+                        } else {
+                            Image(systemName: "arrow.clockwise")
+                        }
+                        Text(softwareUpdateController.isChecking ? "正在检查" : "检查更新")
+                    }
+                    .font(.caption)
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(Theme.brand)
+                .disabled(
+                    !softwareUpdateController.canCheckForUpdates ||
+                    softwareUpdateController.isChecking
+                )
+
+                Text("当前版本 \(softwareUpdateController.currentVersionText)")
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+            }
+
+            softwareUpdateStatus
+        }
+    }
+
+    @ViewBuilder
+    private var softwareUpdateStatus: some View {
+        switch softwareUpdateController.state {
+        case .idle:
+            EmptyView()
+        case .unavailable(let message):
+            Label(message, systemImage: "lock.shield")
+                .font(.caption)
+                .foregroundStyle(.orange)
+        case .checking:
+            Text("正在连接安全更新源…")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        case .upToDate:
+            Label("目前已是最新版", systemImage: "checkmark.circle.fill")
+                .font(.caption)
+                .foregroundStyle(.green)
+        case .updateAvailable(let version):
+            Label("发现新版本 \(version)，请在更新窗口中确认安装", systemImage: "arrow.down.circle.fill")
+                .font(.caption)
+                .foregroundStyle(.green)
+        case .downloading(let version):
+            Label("正在下载版本 \(version)", systemImage: "arrow.down.circle")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        case .installing(let version):
+            Label("正在安装版本 \(version)", systemImage: "shippingbox.fill")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        case .failed(let message):
+            Label(message, systemImage: "xmark.circle.fill")
+                .font(.caption)
+                .foregroundStyle(.red)
         }
     }
 
