@@ -52,6 +52,35 @@ jobs:
           -scheme DeepSeekMonitor
           -configuration Release
           -destination 'generic/platform=macOS'
+          -derivedDataPath .build/ci-derived
           CODE_SIGNING_ALLOWED=NO
           CODE_SIGNING_REQUIRED=NO
           build
+
+      - name: Validate menu bar template asset
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          image_set="Resources/Assets.xcassets/DeepSeekMenuBarTemplate.imageset/Contents.json"
+          assets_car=".build/ci-derived/Build/Products/Release/DeepSeekMonitor.app/Contents/Resources/Assets.car"
+
+          jq -e '.properties["template-rendering-intent"] == "template"' "$image_set" >/dev/null
+          test -f "$assets_car"
+
+          xcrun assetutil --info "$assets_car" | jq -e '
+            any(.[];
+              .Name == "DeepSeekMenuBarTemplate" and
+              .["Template Mode"] == "template" and
+              .Scale == 1 and
+              .PixelWidth == 18 and
+              .PixelHeight == 18
+            ) and
+            any(.[];
+              .Name == "DeepSeekMenuBarTemplate" and
+              .["Template Mode"] == "template" and
+              .Scale == 2 and
+              .PixelWidth == 36 and
+              .PixelHeight == 36
+            )
+          ' >/dev/null

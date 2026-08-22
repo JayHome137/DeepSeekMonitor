@@ -63,7 +63,4 @@ enum Theme {
             ? Color.black.opacity(0.28)
             : Color.black.opacity(0.18)
     }
-
-    /// 菜单栏图标尺寸
-    static let menuBarIconSize = NSSize(width: 18, height: 18)
 }
