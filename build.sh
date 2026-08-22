@@ -18,7 +18,7 @@ WIDGET_APPEX="WidgetSupport.appex"
 APP_BUNDLE_ID="com.deepseek.monitor"
 WIDGET_BUNDLE_ID="com.deepseek.monitor.widget"
 TEAM_ID="N5YV5FV235"
-MARKETING_VERSION="1.5.1"
+MARKETING_VERSION="1.5.2"
 GITHUB_REPOSITORY="JayHome137/DeepSeekMonitor"
 SPARKLE_KEY_ACCOUNT="com.deepseek.monitor"
 APPCAST_FILE="appcast.xml"
@@ -330,10 +330,6 @@ copy_runtime_resources() {
     if [ -f "Resources/deepseek-color.png" ]; then
         cp "Resources/deepseek-color.png" "${APP_BUNDLE}/Contents/Resources/"
     fi
-    if [ -f "Resources/deepseek-menu.png" ]; then
-        cp "Resources/deepseek-menu.png" "${APP_BUNDLE}/Contents/Resources/"
-    fi
-
     compile_asset_catalog "$APP_BUNDLE" "app"
     copy_bundle_icon "$APP_BUNDLE" "App"
 }

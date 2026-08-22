@@ -253,25 +253,22 @@ final class MenuBarManager: NSObject {
     }
 
     private lazy var menuBarIcon: NSImage? = {
-        if let url = Bundle.main.url(forResource: "deepseek-menu", withExtension: "png"),
-           let image = NSImage(contentsOf: url) {
-            image.isTemplate = true
-            image.size = Theme.menuBarIconSize
-            return image
-        }
-        if let url = Bundle.main.url(forResource: "deepseek-color", withExtension: "svg"),
-           let image = NSImage(contentsOf: url) {
-            image.isTemplate = true
-            image.size = Theme.menuBarIconSize
-            return image
-        }
-        return nil
+        let image = Bundle.main.image(forResource: NSImage.Name("DeepSeekMenuBarTemplate"))
+            ?? NSImage(
+                systemSymbolName: "chart.line.uptrend.xyaxis",
+                accessibilityDescription: "DeepSeek Monitor"
+            )
+        image?.isTemplate = true
+        return image
     }()
 
     private func updateStatusBarButton(_ button: NSStatusBarButton) {
         button.image = menuBarIcon
-        button.title = ""
-        button.imagePosition = .imageOnly
+        button.imageScaling = .scaleProportionallyDown
+        button.title = menuBarIcon == nil ? "DS" : ""
+        button.imagePosition = menuBarIcon == nil ? .noImage : .imageOnly
+        button.toolTip = "DeepSeek Monitor"
+        button.setAccessibilityLabel("DeepSeek Monitor")
     }
 
     func startAutoRefresh() { viewModel.startAutoRefresh() }

@@ -6,6 +6,15 @@ IMPORTANT: This file was signed by Sparkle. Any modifications to this file requi
     <channel>
         <title>DeepSeekMonitor</title>
         <item>
+            <title>1.5.2</title>
+            <pubDate>Sat, 22 Aug 2026 18:49:55 +0800</pubDate>
+            <link>https://github.com/JayHome137/DeepSeekMonitor/releases/tag/v1.5.2</link>
+            <sparkle:version>35</sparkle:version>
+            <sparkle:shortVersionString>1.5.2</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+            <enclosure url="https://github.com/JayHome137/DeepSeekMonitor/releases/download/v1.5.2/DeepSeekMonitor-v1.5.2.dmg" length="2883261" type="application/octet-stream" sparkle:edSignature="C8QVXyvsgjdv3gxeIcOS87ZJDp8eV9jxPjBgNDXuZBDHb4+fii3Q5BayXzGqUhDJE7/lE+5zOmzsV/ZdCi7BDg=="/>
+        </item>
+        <item>
             <title>1.5.1</title>
             <pubDate>Sun, 16 Aug 2026 12:26:18 +0800</pubDate>
             <link>https://github.com/JayHome137/DeepSeekMonitor/releases/tag/v1.5.1</link>
@@ -17,6 +26,6 @@ IMPORTANT: This file was signed by Sparkle. Any modifications to this file requi
     </channel>
 </rss>
 <!-- sparkle-signatures:
-edSignature: xjaAILqP+9O9uCVIFTWU2KNksEJ06XWebTzVIrbKQiyI8vgRAfAV8eyLXNGbbu0GOr9R/dKHHObj89OujiajCw==
-length: 1149
+edSignature: 1vHIH+slfCOlM6zL4tXBs8NlRbw+lBS+n//CNAYpUG3/K9XbkURmS0aT0rjbkOYoGAhXgyfLJ2LK5ECkqWXHDQ==
+length: 1859
 -->
