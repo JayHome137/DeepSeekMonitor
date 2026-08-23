@@ -1,91 +1,211 @@
-# DeepSeek Monitor — Project Guide
+# DeepSeek Monitor - Project guide
 
-macOS menu bar app for monitoring DeepSeek V4 Flash / Pro token usage and billing.
-Swift 5.9+ / SwiftUI + AppKit + WidgetKit / SPM + Xcode project / macOS 14+
+DeepSeek Monitor is a macOS menu bar app for monitoring DeepSeek account balance,
+token usage, model costs, and recent usage trends. It also provides a native
+WidgetKit widget, official usage-export import, silent browser-assisted syncing,
+and manually initiated signed software updates.
+
+This is the repository's only agent instruction file. Do not recreate
+`CLAUDE.md` or maintain a second copy of this guide.
+
+## Platform and dependencies
+
+- Swift 5.9+, SwiftUI, AppKit, WidgetKit, WebKit, Security, and ServiceManagement.
+- macOS 14 or later; release builds target both Apple Silicon and Intel.
+- Sparkle 2.9.5 is the only third-party runtime dependency.
+- No storyboards or XIB files; application UI is programmatic.
+- `LSUIElement = true`: the app is menu-bar-only and hidden from the Dock.
+- App bundle ID: `com.deepseek.monitor`.
+- Widget bundle ID: `com.deepseek.monitor.widget`.
+- App Group: `N5YV5FV235.group.com.deepseek.monitor`.
+
+Treat these files as the version source of truth:
+
+- `build.sh`: marketing version used by release tooling.
+- `Resources/Info.plist`: app marketing version and build number.
+- `Sources/WidgetSupport/Info.plist`: widget marketing version and build number.
+
+The app and widget versions must always match. Do not hard-code the current
+release version elsewhere in this guide.
 
 ## Architecture
 
 ```text
 AppDelegate -> MenuBarManager -> FloatingPanel / SettingsWindow / ModelDetailWindow
             -> DashboardViewModel -> DeepSeekService -> APIKeyStore -> Keychain
-                                  -> LocalCache
-            -> WidgetSupport reads App Group snapshot
+                                  -> UsageCSVImporter / UsageAutoImportService
+                                  -> LocalCache -> App Group -> WidgetSupport
+            -> UsageExportAutomationService -> WKWebView -> official usage ZIP
+            -> SoftwareUpdateController -> Sparkle -> signed appcast.xml
 ```
 
-- No storyboards / XIB: pure programmatic UI.
-- No third-party runtime dependencies: Foundation, AppKit, SwiftUI, WidgetKit, WebKit, Security, ServiceManagement.
-- `LSUIElement = true`: hidden from Dock, menu bar only.
-- App bundle id: `com.deepseek.monitor`.
-- Widget bundle id: `com.deepseek.monitor.widget`.
-- App Group: `N5YV5FV235.group.com.deepseek.monitor`.
+- `DashboardViewModel` owns refresh scheduling, visible dashboard state, usage
+  aggregation, import orchestration, cache writes, and widget snapshots.
+- Balance comes from the DeepSeek API. The `/v1/usage` endpoint may return 404;
+  usage then comes from official ZIP/CSV exports.
+- `UsageExportAutomationService` reuses the user's DeepSeek web session and keeps
+  scheduled exports hidden. The login window is shown only for an explicit login
+  action or when the user needs to restore the session.
+- `WidgetSupport` reads the App Group snapshot and never reads the API key.
 
-## Key Files
+## Key files
 
-| File | Role |
+| File | Responsibility |
 |---|---|
-| `Sources/DeepSeekMonitor/App.swift` | `@main` entry, sleep/wake and deep-link handling. |
-| `Sources/DeepSeekMonitor/MenuBarManager.swift` | NSStatusBar, main panel, settings/detail routing, widget deep links, hover auto-close. |
-| `Sources/DeepSeekMonitor/ViewModels/DashboardViewModel.swift` | Polling, balance/usage aggregation, cache, CSV import flow. |
-| `Sources/DeepSeekMonitor/Services/DeepSeekService.swift` | DeepSeek API calls and in-process API key access. |
-| `Sources/DeepSeekMonitor/Services/APIKeyStore.swift` | Keychain storage and one-time migration from legacy UserDefaults. |
+| `Sources/DeepSeekMonitor/App.swift` | App entry point, sleep/wake handling, and deep-link dispatch. |
+| `Sources/DeepSeekMonitor/MenuBarManager.swift` | Status item, main panel, settings/detail routing, hover behavior, and status menu. |
+| `Sources/DeepSeekMonitor/ViewModels/DashboardViewModel.swift` | Refresh, aggregation, cache, import, and widget synchronization. |
+| `Sources/DeepSeekMonitor/Services/DeepSeekService.swift` | Balance/usage API requests and in-process API-key access. |
+| `Sources/DeepSeekMonitor/Services/APIKeyStore.swift` | Keychain storage and verified legacy migration. |
+| `Sources/DeepSeekMonitor/Services/UsageExportAutomationService.swift` | Official-site WKWebView login, silent export, and download handling. |
+| `Sources/DeepSeekMonitor/Services/UsageAutoImportService.swift` | ZIP/CSV preparation, archive validation, quarantine, and automatic import state. |
+| `Sources/DeepSeekMonitor/Services/UsageCSVImporter.swift` | Official amount/cost schema parsing and aggregation. |
+| `Sources/DeepSeekMonitor/Services/SoftwareUpdateController.swift` | Manual Sparkle update checks and user-visible update state. |
 | `Sources/DeepSeekMonitor/Services/LocalCache.swift` | Dashboard cache and WidgetKit App Group snapshot. |
 | `Sources/DeepSeekMonitor/Views/ContentView.swift` | Main menu bar dashboard. |
-| `Sources/DeepSeekMonitor/Views/ModelDetailWindowController.swift` | V4 Flash / Pro side panel, same size as dashboard. |
-| `Sources/DeepSeekMonitor/Views/SettingsView.swift` | API key, native widget sync, login item, refresh/import/export settings. |
-| `Sources/WidgetSupport/TimelineProvider.swift` | WidgetKit timeline provider reading shared data. |
-| `Sources/WidgetSupport/WidgetViews.swift` | Medium WidgetKit UI, glass styling, model shortcuts. |
-| `Resources/Assets.xcassets/` | App/widget image assets compiled into app and appex. |
-| `build.sh` | Version bump, Xcode release build, signing, WidgetKit cleanup, DMG packaging. |
+| `Sources/DeepSeekMonitor/Views/SettingsView.swift` | API key, widget, login item, update, refresh, and import/export settings. |
+| `Sources/DeepSeekMonitor/Views/ModelDetailWindowController.swift` | Flash/Pro model detail side panel. |
+| `Sources/WidgetSupport/TimelineProvider.swift` | Widget timeline provider reading shared data. |
+| `Sources/WidgetSupport/WidgetViews.swift` | Medium WidgetKit UI and deep links. |
+| `Resources/Assets.xcassets/DeepSeekMenuBarTemplate.imageset/` | Native 1x/2x template menu bar icon. |
+| `Resources/Info.plist` | App identity, version, URL scheme, and Sparkle trust configuration. |
+| `appcast.xml` | Sparkle-signed published update feed. |
+| `.github/workflows/ci.yml` | Tests, unsigned release build, trust checks, and menu icon validation. |
+| `build.sh` | Version bump, Xcode build, signing, cleanup, DMG, and appcast packaging. |
 
-## Build & Run
+## Build and verify
 
 ```bash
-./build.sh icon       # Generate AppIcon.icns and asset catalog icon images from SVG.
-./build.sh run        # Build and open a stably development-signed Xcode Debug app.
-./build.sh release    # Increment build, build signed app + appex, create app and DMG in project root.
-./build.sh restart    # Run release, then open the generated project-root app.
-./build.sh dmg        # Run release and print DMG install guidance.
+swift test
+./build.sh run
+./build.sh release
+./build.sh appcast
+./build.sh signed-release
 ```
 
-Release outputs stay in the project root: `DeepSeekMonitor.app` and `DeepSeekMonitor-v<version>-build<build>.dmg`. Do not assume release installs into `/Applications`. The script may remove stale `/Applications/DeepSeekMonitor.app` for this project only, then leaves installation to the user via the DMG.
+- `swift test` runs the package tests without creating release artifacts.
+- `./build.sh run` increments the build number, creates a stable development-signed
+  Xcode Debug app, verifies its Team ID, and opens it.
+- `./build.sh release` increments the build number, builds the universal app and
+  widget, signs nested Sparkle components, verifies the bundle, and creates the DMG.
+- `./build.sh appcast` signs the existing matching DMG and does not increment the
+  build number.
+- `./build.sh signed-release` runs `release` followed by `appcast`.
 
-## Critical Gotchas
+Release outputs stay in the repository root:
 
-### Native WidgetKit signing
+```text
+DeepSeekMonitor.app
+DeepSeekMonitor-v<version>.dmg
+```
 
-WidgetKit extensions on macOS 26 need a trusted Apple Development certificate. Xcode automatic signing is used when available. The app and appex must both carry `N5YV5FV235.group.com.deepseek.monitor`.
+The CI-equivalent unsigned build is:
 
-### API key storage
+```bash
+xcodebuild \
+  -project DeepSeekMonitor.xcodeproj \
+  -scheme DeepSeekMonitor \
+  -configuration Release \
+  -destination 'generic/platform=macOS' \
+  -derivedDataPath .build/ci-derived \
+  CODE_SIGNING_ALLOWED=NO \
+  CODE_SIGNING_REQUIRED=NO \
+  build
+```
 
-The API key is stored as a generic password in the macOS login Keychain. On first launch after upgrade, `APIKeyStore` copies the legacy `deepseek_api_key` UserDefaults value, verifies the Keychain readback, and only then removes the legacy value. `build.sh run` requires a stable Apple Development / Mac Developer signature so local rebuilds retain Keychain access without repeated authorization prompts.
+## Release boundaries
 
-### Widget data and cache
+- `./build.sh release` changes both Info.plist build numbers. Do not rerun it only
+  to publish an already validated artifact; doing so breaks the source/DMG/appcast
+  pairing.
+- Before publishing, confirm the app, widget, `build.sh`, DMG name, and appcast all
+  describe the same marketing version and build number.
+- The appcast may retain earlier published versions, but it must not contain an
+  unpublished build. Its enclosure URL, byte length, and Ed25519 signature must
+  match the uploaded DMG.
+- The Sparkle private key stays in the maintainer's login Keychain. Only the public
+  key belongs in `Resources/Info.plist` and the repository.
+- Do not commit, push, create a tag or GitHub Release, close issues, or update the
+  separate Homebrew tap unless the user explicitly authorizes that operation.
+- A release is not complete until the remote tag/commit, uploaded DMG hash and
+  size, raw appcast, and GitHub CI result have been verified.
 
-The app writes `widget_snapshot` and `native_widget_enabled` into the App Group. `WidgetSupport` reads them in `TimelineProvider`. `build.sh release` clears DeepSeekMonitor-specific PluginKit/LaunchServices registrations, Chrono cache, relevance cache, and stale app copies. If the widget gallery keeps an old icon after repeated local builds, reboot macOS to force WidgetKit/IconServices to rescan `/Applications/DeepSeekMonitor.app`.
+## Security and data boundaries
 
-### Icons
+### API key
 
-After `actool`, `build.sh` copies `Resources/AppIcon.icns` back into both app and appex so the full `ic12` icon remains available for LaunchServices and WidgetKit.
+The API key is a generic password in the macOS login Keychain with service
+`com.deepseek.monitor` and account `deepseek-api-key`. Legacy migration must keep
+this invariant:
 
-### Widget families and deep links
+```text
+read legacy value -> write Keychain -> read back and verify -> remove legacy value
+```
 
-Only `.systemMedium` is supported. The old small widget and old hand-written desktop widget window are removed. Widget row taps use `deepseekmonitor://flash` and `deepseekmonitor://pro`, and should open only the model detail side panel.
+Any failure must leave the legacy value available. Never put the API key in logs,
+UserDefaults, widget snapshots, diagnostics, test fixtures, or release notes.
 
-### Detail panel sizing
+### Official usage export
 
-`Theme.detailPanelWidth = Theme.panelWidth` and `Theme.detailPanelHeight = Theme.panelDashboardHeight`. Any model-detail trigger should go through `ModelDetailWindowController` so dashboard clicks and widget deep links stay aligned.
+- Browser automation and script messages are restricted to main-frame HTTPS pages
+  on `platform.deepseek.com`.
+- Automatic browser exports must remain silent; explicit login actions may show the
+  WKWebView window.
+- Downloads and import sources are limited to 64 MiB before extraction.
+- ZIP validation must continue to reject traversal, absolute/backslash paths,
+  duplicate entries, symbolic links, special files, excessive entries, and
+  oversized extracted data.
+- Automatic sync accepts only official current-month ZIP exports. Manual import is
+  the fallback for official month, recent-range, and historical ZIP/CSV files.
+- Amount and cost files must describe compatible ranges and time-zone semantics.
 
-### Buttons and status menu
+### Software updates
 
-Avoid `.buttonStyle(.plain)` for menu/popover controls that need reliable hit testing; prefer `.borderless` or `.borderedProminent`. Right-click status item menus must use the temporary `statusItem.menu` + `button.performClick(nil)` pattern, then set `statusItem.menu = nil`.
+- Update checks are manual; automatic checks and automatic installation are off.
+- The feed and download URLs are HTTPS-only.
+- Sparkle verifies the signed appcast and the downloaded DMG before extraction.
+- Do not weaken `SURequireSignedFeed`, `SUVerifyUpdateBeforeExtraction`,
+  `SUEnableInstallerLauncherService`, or `SUAllowedURLSchemes`.
 
-### Usage endpoint fallback
+## UI and WidgetKit invariants
 
-DeepSeek's `/v1/usage` can return 404. Balance should still display, and usage should fall back to CSV/ZIP import or WKWebView export automation.
+- The menu bar image comes from `DeepSeekMenuBarTemplate.imageset`: 18x18 pixels at
+  1x and 36x36 pixels at 2x, with template rendering enabled. Do not restore the old
+  oversized runtime PNG or manually override the image representation size.
+- Keep `MenuBarIconTests` and the CI `assetutil` checks when changing menu icon
+  loading or asset catalog configuration.
+- Avoid `.buttonStyle(.plain)` for menu/popover controls that need reliable hit
+  testing; use `.borderless` or `.borderedProminent` as appropriate.
+- Right-click status menus must temporarily assign `statusItem.menu`, invoke
+  `button.performClick(nil)`, and then clear `statusItem.menu`.
+- Only `.systemMedium` is supported. Widget links use
+  `deepseekmonitor://settings`, `deepseekmonitor://flash`, and
+  `deepseekmonitor://pro`.
+- Dashboard and widget model links must route through
+  `ModelDetailWindowController`; the detail panel remains the same size as the main
+  dashboard.
+- Because this is an `LSUIElement` app, UI tools may report no windows while the app
+  is running normally with all panels closed. Verify the process and status item
+  before treating a window-attachment timeout as a launch failure.
 
-## Data Storage
+## Local data
 
-- API key: macOS login Keychain, service `com.deepseek.monitor`, account `deepseek-api-key`.
-- Dashboard cache: `cached_dashboard`, `cached_usage_history`.
-- Widget App Group: `~/Library/Group Containers/N5YV5FV235.group.com.deepseek.monitor/`, keys `widget_snapshot`, `native_widget_enabled`.
-- Auto-import folder: `~/Library/Application Support/DeepSeekMonitor/usage-sync/`.
+- Dashboard cache: `cached_dashboard`, `cached_usage_history`, and the history
+  schema version in standard UserDefaults.
+- Widget data: `widget_snapshot` and `native_widget_enabled` in
+  `~/Library/Group Containers/N5YV5FV235.group.com.deepseek.monitor/`.
+- Managed usage imports:
+  `~/Library/Application Support/DeepSeekMonitor/usage-sync/`.
+- Failed automatic imports are quarantined under the managed usage-sync directory;
+  do not silently discard them before the UI reports the failure.
+
+## Validation expectations
+
+- Documentation-only changes: run `git diff --check` and verify every documented
+  path and command against the repository.
+- Shared logic or user-visible changes: run `swift test` and the CI-equivalent
+  Xcode build.
+- Menu icon changes: run `MenuBarIconTests`, inspect the compiled asset catalog,
+  and verify light/dark AppKit rendering on the supported macOS version.
+- Release changes: additionally verify `codesign --deep --strict`, `hdiutil verify`,
+  Sparkle appcast signatures, remote artifact hash/size, and GitHub CI.
