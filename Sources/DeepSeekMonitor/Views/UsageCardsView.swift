@@ -4,14 +4,14 @@ import SwiftUI
 
 struct UsageCardsView: View {
     let flashUsage: ModelUsageSummary?
-    let proUsage: ModelUsageSummary?
+    let v4FlashUsage: ModelUsageSummary?
     let isUnavailable: Bool
     let onOpenModelDetail: (DeepSeekModel) -> Void
 
     @Environment(\.colorScheme) var colorScheme
 
     private var maxTokens: Int {
-        max(flashUsage?.totalTokens ?? 0, proUsage?.totalTokens ?? 0, 1)
+        max(flashUsage?.totalTokens ?? 0, v4FlashUsage?.totalTokens ?? 0, 1)
     }
 
     var body: some View {
@@ -26,11 +26,11 @@ struct UsageCardsView: View {
                 onOpenDetail: onOpenModelDetail
             )
             UsageCardRow(
-                model: .pro,
-                usage: proUsage,
+                model: .v4Flash,
+                usage: v4FlashUsage,
                 maxTokens: maxTokens,
-                gradient: Theme.proGradient,
-                tint: Theme.pro,
+                gradient: Theme.v4FlashGradient,
+                tint: Theme.v4Flash,
                 isUnavailable: isUnavailable,
                 onOpenDetail: onOpenModelDetail
             )
@@ -68,15 +68,20 @@ private struct UsageCardRow: View {
                         Text(model.displayName)
                             .font(.system(size: 16, weight: .semibold))
                             .foregroundStyle(.primary)
+                            .lineLimit(1)
 
-                        Text("近 7 日")
-                            .font(.caption2)
-                            .foregroundStyle(.tertiary)
+                        Text(model.statusLabel)
+                            .font(.caption2.weight(.medium))
+                            .foregroundStyle(tint)
+                            .padding(.horizontal, 5)
+                            .padding(.vertical, 2)
+                            .background(tint.opacity(0.12), in: Capsule())
+                            .fixedSize()
                     }
 
                     if let usage {
                         VStack(alignment: .leading, spacing: 5) {
-                            Text(usage.totalTokensFormatted)
+                            Text("近 7 日 · \(usage.totalTokensFormatted)")
                                 .font(.caption.weight(.medium))
                                 .foregroundStyle(.secondary)
                                 .lineLimit(1)
@@ -130,6 +135,7 @@ private struct UsageCardRow: View {
         }
         .buttonStyle(.borderless)
         .disabled(usage == nil)
+        .help("\(model.rawValue)\n\(model.statusDescription)")
     }
 
     private func costPerToken(_ usage: ModelUsageSummary) -> String {

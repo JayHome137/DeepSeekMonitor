@@ -28,16 +28,16 @@ enum Theme {
 
     // MARK: - Model Colors
 
-    /// V4 Flash — 蓝色系
+    /// V4.1 Flash — 蓝色系
     static let flash = Color.blue
     static let flashGradient = LinearGradient(
         colors: [.blue, .cyan.opacity(0.7)],
         startPoint: .leading, endPoint: .trailing
     )
 
-    /// V4 Pro — 紫色系（推理模型）
-    static let pro = Color.purple
-    static let proGradient = LinearGradient(
+    /// V4 Flash — 紫色系
+    static let v4Flash = Color.purple
+    static let v4FlashGradient = LinearGradient(
         colors: [.purple, .indigo.opacity(0.7)],
         startPoint: .leading, endPoint: .trailing
     )

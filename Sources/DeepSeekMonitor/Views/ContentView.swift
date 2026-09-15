@@ -111,7 +111,7 @@ struct ContentView: View {
 
             UsageCardsView(
                 flashUsage: viewModel.flashUsage,
-                proUsage: viewModel.proUsage,
+                v4FlashUsage: viewModel.v4FlashUsage,
                 isUnavailable: viewModel.isUsageUnavailable,
                 onOpenModelDetail: onOpenModelDetail
             )

@@ -83,6 +83,50 @@ final class DashboardViewModelTests: XCTestCase {
     }
 
     @MainActor
+    func testUnsupportedModelsDoNotEnterDashboardAggregates() async throws {
+        let environment = try makeEnvironment()
+        defer { environment.cleanup() }
+
+        let today = UsageTime.formatter("yyyy-MM-dd").string(from: Date())
+        let service = MockDeepSeekService(apiKey: "valid-key")
+        service.usageResponse = UsageResponse(data: [
+            UsageRecord(
+                id: "flash",
+                modelName: "deepseek-flash",
+                totalTokens: 10,
+                promptTokens: 10,
+                completionTokens: 0,
+                costByCurrency: ["CNY": 1],
+                date: today,
+                requestCount: 1
+            ),
+            UsageRecord(
+                id: "reasoner",
+                modelName: "deepseek-reasoner",
+                totalTokens: 900,
+                promptTokens: 900,
+                completionTokens: 0,
+                costByCurrency: ["CNY": 9],
+                date: today,
+                requestCount: 1
+            )
+        ])
+
+        let viewModel = DashboardViewModel(
+            service: service,
+            cache: environment.cache,
+            preferences: environment.preferences
+        )
+
+        await viewModel.refresh()
+
+        XCTAssertEqual(viewModel.flashUsage?.totalTokens, 10)
+        XCTAssertNil(viewModel.v4FlashUsage)
+        XCTAssertEqual(viewModel.totalTokens, 10)
+        XCTAssertEqual(viewModel.currentMonthCost, 1, accuracy: 0.0001)
+    }
+
+    @MainActor
     func testRefreshIntervalPersistsAcrossViewModelInstances() throws {
         let environment = try makeEnvironment()
         defer { environment.cleanup() }
@@ -233,8 +277,8 @@ final class DashboardViewModelTests: XCTestCase {
             currentMonthCost: 10,
             flashTotalTokens: 100,
             flashCostInCents: 10,
-            proTotalTokens: 200,
-            proCostInCents: 20,
+            v4FlashTotalTokens: 200,
+            v4FlashCostInCents: 20,
             dailyUsage: ["2026-08-14": 300],
             balanceLastUpdated: Date(),
             usageLastUpdated: Date(),

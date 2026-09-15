@@ -15,11 +15,9 @@
 
 ## 📌 项目介绍
 
-DeepSeek Monitor 是一款菜单栏应用，集中显示 DeepSeek V4 Flash / Pro 的余额、Token 用量、模型成本和近期趋势。
+DeepSeek Monitor 是一款菜单栏应用，集中显示账户余额、Token 用量、模型成本和近期趋势。模型用量按官方 Usage 导出的 `model` 标识分为 **V4.1 Flash**（`deepseek-flash`）与 **V4 Flash**（`deepseek-v4-flash`）两类。
 
 余额优先通过 DeepSeek API 获取；当 `/v1/usage` 对账户返回 404，或网页数据需要补充时，应用使用 DeepSeek 官方 Usage ZIP/CSV 导出。网页自动导出只在用户启用后运行，定时任务保持静默；首次登录或登录失效时才显示网页窗口。
-
-当前版本：**v1.5.2**
 
 ## ✅ 适用环境
 
@@ -91,9 +89,11 @@ DeepSeek API ───────────────┐
 
 - DeepSeek `/v1/usage` 对部分账户可能返回 404，但不影响余额查询；应用会回退到官方网页导出或手动导入。
 - 自动同步只处理官方当前月份 ZIP；近 7 天、近 30 天和历史数据使用手动导入。
-- ZIP 通常同时包含 `amount.csv` 和 `cost.csv`，两者日期范围必须匹配。
+- 当前官方 ZIP 包含 `amount-YYYY-MM-DD_YYYY-MM-DD.csv` 与 `cost-YYYY-MM-DD_YYYY-MM-DD.csv`，两者日期范围和时区必须匹配。`amount` CSV 字段为 `user_id`、`start_time_iso`、`end_time_iso`、`model`、`api_key_name`、`api_key`、`type`、`price`、`amount`；`cost` CSV 字段为 `user_id`、`start_time_iso`、`end_time_iso`、`model`、`wallet_type`、`cost`、`currency`。
+- 两张模型卡代表导出记录中的两个 `model` 标识。V4.1 Flash 是新模型；V4 Flash 是旧模型名，原模型已下线，旧名称的 API 请求由 V4.1 Flash 提供服务并按 Flash 价格计费。V4 Pro 仍由官方提供服务，仅不在本应用当前面板展示范围内；如果导出范围内有 Pro 用量，原始 CSV 可能包含 Pro 行，应用会按当前面板范围跳过这些行。
+- 费用以官方导出的 `cost` 为准；分时单价和模型计费规则请以 [DeepSeek 官方定价页](https://api-docs.deepseek.com/zh-cn/quick_start/pricing/) 为准，应用不会用本地硬编码价格覆盖官方费用。
 - 统计日期以官方导出文件携带的时区为准，网页数据可能延迟约 5 分钟。
-- 自动导入失败的文件会保留在 `usage-sync/failed/`，不会静默删除，方便排查或重新导入。
+- 自动导入失败的文件会保留在 `usage-sync/failed/`，不会静默删除，方便排查或重新导入；官方原始文件可能含有 `api_key` 列，请按敏感文件保管。
 
 ## 🛠️ 从源码构建
 
@@ -139,7 +139,7 @@ xcodebuild \
 
 ## 🔐 安全与隐私
 
-- API Key 保存在 macOS 登录钥匙串，不写入 WidgetKit 共享数据、导出文件或日志。
+- API Key 保存在 macOS 登录钥匙串，不写入应用缓存、WidgetKit 共享数据或日志。官方 `amount` 导出可能自带 `api_key` 列；应用只识别导入所需字段并忽略该列，不会把它写入缓存、Widget 快照或诊断信息。
 - WKWebView 使用本机持久化网站数据保存 DeepSeek 登录状态；清空业务缓存不会自动清除网页 Cookie。
 - 自动导出下载和 ZIP 导入均有 64 MiB 限制，并在解压前拒绝路径穿越、重复条目、符号链接和特殊文件。
 - 软件更新使用 Sparkle Ed25519 签名验证；仓库和 App 内只有公钥，发布私钥仅保存在维护者钥匙串。

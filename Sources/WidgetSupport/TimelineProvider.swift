@@ -11,7 +11,7 @@ struct WidgetSnapshot: Decodable {
     let currentDayCost: Double
     let currentMonthCost: Double
     let flashCostInCents: Int
-    let proCostInCents: Int
+    let v4FlashCostInCents: Int
     let usageUpdatedAt: Date
     let lastUpdated: Date
 
@@ -24,7 +24,8 @@ struct WidgetSnapshot: Decodable {
         case currentDayCost
         case currentMonthCost
         case flashCostInCents
-        case proCostInCents
+        case v4FlashCostInCents
+        case legacyProCostInCents = "proCostInCents"
         case usageUpdatedAt
         case lastUpdated
     }
@@ -38,8 +39,15 @@ struct WidgetSnapshot: Decodable {
         usageCurrencyCode = try container.decodeIfPresent(String.self, forKey: .usageCurrencyCode) ?? balanceCurrencyCode
         currentDayCost = try container.decode(Double.self, forKey: .currentDayCost)
         currentMonthCost = try container.decode(Double.self, forKey: .currentMonthCost)
-        flashCostInCents = try container.decode(Int.self, forKey: .flashCostInCents)
-        proCostInCents = try container.decode(Int.self, forKey: .proCostInCents)
+        let storedFlash = try container.decodeIfPresent(Int.self, forKey: .flashCostInCents) ?? 0
+        if let storedV4Flash = try container.decodeIfPresent(Int.self, forKey: .v4FlashCostInCents) {
+            flashCostInCents = storedFlash
+            v4FlashCostInCents = storedV4Flash
+        } else {
+            // Previous snapshots used flash for deepseek-chat and pro for Reasoner.
+            flashCostInCents = 0
+            v4FlashCostInCents = storedFlash
+        }
         lastUpdated = try container.decode(Date.self, forKey: .lastUpdated)
         usageUpdatedAt = try container.decodeIfPresent(Date.self, forKey: .usageUpdatedAt) ?? lastUpdated
     }
@@ -57,7 +65,7 @@ struct WidgetEntry: TimelineEntry {
     let dayCost: Double
     let monthCost: Double
     let flashCostCents: Int
-    let proCostCents: Int
+    let v4FlashCostCents: Int
     let usageUpdatedAt: Date
     let hasData: Bool
 
@@ -71,7 +79,7 @@ struct WidgetEntry: TimelineEntry {
         dayCost: 0,
         monthCost: 0,
         flashCostCents: 0,
-        proCostCents: 0,
+        v4FlashCostCents: 0,
         usageUpdatedAt: Date(),
         hasData: false
     )
@@ -129,7 +137,7 @@ struct Provider: TimelineProvider {
                 dayCost: 0,
                 monthCost: 0,
                 flashCostCents: 0,
-                proCostCents: 0,
+                v4FlashCostCents: 0,
                 usageUpdatedAt: Date(),
                 hasData: false
             )
@@ -148,7 +156,7 @@ struct Provider: TimelineProvider {
             dayCost: s.currentDayCost,
             monthCost: s.currentMonthCost,
             flashCostCents: s.flashCostInCents,
-            proCostCents: s.proCostInCents,
+            v4FlashCostCents: s.v4FlashCostInCents,
             usageUpdatedAt: s.usageUpdatedAt,
             hasData: true
         )

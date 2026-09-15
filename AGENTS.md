@@ -64,7 +64,7 @@ AppDelegate -> MenuBarManager -> FloatingPanel / SettingsWindow / ModelDetailWin
 | `Sources/DeepSeekMonitor/Services/LocalCache.swift` | Dashboard cache and WidgetKit App Group snapshot. |
 | `Sources/DeepSeekMonitor/Views/ContentView.swift` | Main menu bar dashboard. |
 | `Sources/DeepSeekMonitor/Views/SettingsView.swift` | API key, widget, login item, update, refresh, and import/export settings. |
-| `Sources/DeepSeekMonitor/Views/ModelDetailWindowController.swift` | Flash/Pro model detail side panel. |
+| `Sources/DeepSeekMonitor/Views/ModelDetailWindowController.swift` | V4.1 Flash/V4 Flash model detail side panel. |
 | `Sources/WidgetSupport/TimelineProvider.swift` | Widget timeline provider reading shared data. |
 | `Sources/WidgetSupport/WidgetViews.swift` | Medium WidgetKit UI and deep links. |
 | `Resources/Assets.xcassets/DeepSeekMenuBarTemplate.imageset/` | Native 1x/2x template menu bar icon. |
@@ -151,7 +151,25 @@ UserDefaults, widget snapshots, diagnostics, test fixtures, or release notes.
   on `platform.deepseek.com`.
 - Automatic browser exports must remain silent; explicit login actions may show the
   WKWebView window.
-- Downloads and import sources are limited to 64 MiB before extraction.
+- The dashboard groups Usage records by the exported `model` identifiers
+  `deepseek-flash` (V4.1 Flash) and `deepseek-v4-flash` (V4 Flash). V4.1 Flash is
+  the new model; the original V4 Flash is retired, and API requests using its
+  legacy name are served by V4.1 Flash at Flash pricing. V4 Pro remains available
+  from DeepSeek but is outside the current dashboard scope. Official exports may
+  still contain Pro rows when the selected range includes Pro usage; the importer
+  intentionally skips them while leaving the original export untouched.
+- Official ZIP exports contain matching `amount-YYYY-MM-DD_YYYY-MM-DD.csv` and
+  `cost-YYYY-MM-DD_YYYY-MM-DD.csv` files. Amount fields include `user_id`,
+  `start_time_iso`, `end_time_iso`, `model`, `api_key_name`, `api_key`, `type`,
+  `price`, and `amount`; cost fields include `user_id`, `start_time_iso`,
+  `end_time_iso`, `model`, `wallet_type`, `cost`, and `currency`.
+- Billing rules and time-window pricing are documented in the
+  [official DeepSeek pricing page](https://api-docs.deepseek.com/zh-cn/quick_start/pricing/).
+  Imported `cost` values are authoritative; do not replace them with local
+  hard-coded rates.
+- Downloads and import sources are limited to 64 MiB before extraction; ZIP
+  validation also limits each extracted file to 128 MiB and all extracted files
+  to 256 MiB.
 - ZIP validation must continue to reject traversal, absolute/backslash paths,
   duplicate entries, symbolic links, special files, excessive entries, and
   oversized extracted data.
@@ -178,9 +196,9 @@ UserDefaults, widget snapshots, diagnostics, test fixtures, or release notes.
   testing; use `.borderless` or `.borderedProminent` as appropriate.
 - Right-click status menus must temporarily assign `statusItem.menu`, invoke
   `button.performClick(nil)`, and then clear `statusItem.menu`.
-- Only `.systemMedium` is supported. Widget links use
-  `deepseekmonitor://settings`, `deepseekmonitor://flash`, and
-  `deepseekmonitor://pro`.
+- Only `.systemMedium` is supported. Widget links use the settings route and the
+  two current model detail routes; keep their URL scheme names synchronized with
+  `MenuBarManager` when model identifiers change.
 - Dashboard and widget model links must route through
   `ModelDetailWindowController`; the detail panel remains the same size as the main
   dashboard.

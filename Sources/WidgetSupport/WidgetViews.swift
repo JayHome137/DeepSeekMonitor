@@ -146,13 +146,27 @@ private struct BrandGlyph: View {
 
 private enum ModelBadgeKind {
     case flash
-    case pro
+    case v4Flash
+
+    var displayName: String {
+        switch self {
+        case .flash: return "V4.1 Flash"
+        case .v4Flash: return "V4 Flash"
+        }
+    }
+
+    var statusLabel: String {
+        switch self {
+        case .flash: return "新模型 · deepseek-flash"
+        case .v4Flash: return "旧名称 · deepseek-v4-flash"
+        }
+    }
 
     var background: Color {
         switch self {
         case .flash:
             Color(red: 0.10, green: 0.22, blue: 0.24)
-        case .pro:
+        case .v4Flash:
             Color(red: 0.22, green: 0.16, blue: 0.30)
         }
     }
@@ -161,7 +175,7 @@ private enum ModelBadgeKind {
         switch self {
         case .flash:
             Color(red: 0.25, green: 0.56, blue: 1.0)
-        case .pro:
+        case .v4Flash:
             Color(red: 0.94, green: 0.18, blue: 1.0)
         }
     }
@@ -170,8 +184,8 @@ private enum ModelBadgeKind {
         switch self {
         case .flash:
             "bolt.fill"
-        case .pro:
-            "brain.head.profile"
+        case .v4Flash:
+            "bolt.horizontal.fill"
         }
     }
 }
@@ -324,7 +338,25 @@ private struct ModelCostRow: View {
     var body: some View {
         Link(destination: URL(string: url)!) {
             HStack(spacing: 8) {
-                ModelBadge(kind: kind, size: 25)
+                HStack(spacing: 6) {
+                    ModelBadge(kind: kind, size: 25)
+
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text(kind.displayName)
+                            .font(.system(size: 11, weight: .semibold, design: .rounded))
+                            .foregroundStyle(widgetTextStrong(for: colorScheme))
+                            .widgetAccentable(false)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.75)
+
+                        Text(kind.statusLabel)
+                            .font(.system(size: 8.5, weight: .medium, design: .rounded))
+                            .foregroundStyle(widgetTextMuted(for: colorScheme))
+                            .widgetAccentable(false)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.65)
+                    }
+                }
                     .frame(maxWidth: .infinity, alignment: .leading)
 
                 Text(entry.hasData ? costFormatted(costCents, code: entry.usageCurrencyCode) : "--")
@@ -467,9 +499,9 @@ private struct MediumWidgetView: View {
 
             ModelCostRow(
                 entry: entry,
-                kind: .pro,
-                costCents: entry.proCostCents,
-                url: "deepseekmonitor://pro",
+                kind: .v4Flash,
+                costCents: entry.v4FlashCostCents,
+                url: "deepseekmonitor://v4-flash",
                 height: 38
             )
 
@@ -526,7 +558,7 @@ private func localTime(_ date: Date) -> String {
         dayCost: 12.34,
         monthCost: 98.76,
         flashCostCents: 560,
-        proCostCents: 1230,
+        v4FlashCostCents: 1230,
         usageUpdatedAt: Date(),
         hasData: true
     )

@@ -2,7 +2,7 @@
 
 [中文](README.md)
 
-DeepSeek Monitor is a macOS menu bar app for viewing DeepSeek V4 Flash / Pro balance, token usage, and spending. The current version is **v1.5.1**.
+DeepSeek Monitor is a macOS menu bar app for viewing account balance, token usage, and spending. Model cards group official Usage records by their `model` identifier: **V4.1 Flash** (`deepseek-flash`) and **V4 Flash** (`deepseek-v4-flash`).
 
 Requires **macOS 14 or later**. Supports Apple Silicon and Intel Macs that can run macOS 14+.
 
@@ -53,7 +53,11 @@ Maintainers can run `./build.sh signed-release` to build the DMG and generate a 
 3. For usage sync, sign in to the DeepSeek platform once and enable automatic export, or import an official Usage ZIP/CSV directly.
 4. For the desktop widget, enable “原生小组件数据” (Native Widget Data), then add DeepSeek Monitor from the macOS widget gallery.
 
-DeepSeek's `/v1/usage` endpoint may return 404 for some accounts, but balance queries still work. The app then supplements usage through official web exports or manual imports; ZIP files use both `amount.csv` and `cost.csv`. Dates follow the export's time zone, and platform data may lag by about five minutes.
+DeepSeek's `/v1/usage` endpoint may return 404 for some accounts, but balance queries still work. The app then supplements usage through official web exports or manual imports. Current ZIP exports contain `amount-YYYY-MM-DD_YYYY-MM-DD.csv` and `cost-YYYY-MM-DD_YYYY-MM-DD.csv`; the amount file uses `user_id`, `start_time_iso`, `end_time_iso`, `model`, `api_key_name`, `api_key`, `type`, `price`, and `amount`, while the cost file uses `user_id`, `start_time_iso`, `end_time_iso`, `model`, `wallet_type`, `cost`, and `currency`. Dates follow the export's time zone, and platform data may lag by about five minutes.
+
+V4.1 Flash is the new model. V4 Flash is a legacy model name: the original model is retired, and API requests using that name are served by V4.1 Flash at Flash pricing. V4 Pro remains available from DeepSeek but is outside the app's current dashboard scope; a downloaded export may contain Pro rows when the selected range includes Pro usage, and the app skips them by design. Billing rules and time-window pricing are maintained on the [official DeepSeek pricing page](https://api-docs.deepseek.com/zh-cn/quick_start/pricing/); imported `cost` values remain authoritative.
+
+Failed automatic imports remain under `usage-sync/failed/` for diagnosis or retry. Treat those original exports as sensitive because an official amount file may include an `api_key` column.
 
 ## Software updates
 
@@ -61,7 +65,7 @@ Click “检查更新” (Check for Updates) in Settings to query a new version 
 
 ## Security and privacy
 
-- The DeepSeek API key is stored in the macOS login Keychain, never in configuration files or shared widget data.
+- The DeepSeek API key is stored in the macOS login Keychain, never in application caches, shared widget data, or logs. An official amount export may contain an `api_key` column; the importer does not persist that field.
 - Usage caches, imported results, and widget snapshots remain on this Mac.
 - The Sparkle release private key remains only in the maintainer's Keychain; the repository and app contain only the public key.
 - No analytics, telemetry, or third-party tracking is included.

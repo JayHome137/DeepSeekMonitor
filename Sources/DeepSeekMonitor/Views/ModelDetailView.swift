@@ -87,27 +87,48 @@ struct ModelDetailView: View {
     }
 
     private var headerCard: some View {
-        HStack(spacing: 14) {
-            ZStack {
-                Circle()
-                    .fill(gradient.opacity(0.16))
-                    .frame(width: 54, height: 54)
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 14) {
+                ZStack {
+                    Circle()
+                        .fill(gradient.opacity(0.16))
+                        .frame(width: 54, height: 54)
 
-                Image(systemName: model.systemImageName)
-                    .font(.system(size: 22, weight: .medium))
-                    .foregroundStyle(tint)
+                    Image(systemName: model.systemImageName)
+                        .font(.system(size: 22, weight: .medium))
+                        .foregroundStyle(tint)
+                }
+
+                VStack(alignment: .leading, spacing: 5) {
+                    HStack(spacing: 6) {
+                        Text(model.displayName)
+                            .font(.title2.weight(.semibold))
+
+                        Text(model.statusLabel)
+                            .font(.caption2.weight(.medium))
+                            .foregroundStyle(tint)
+                            .padding(.horizontal, 5)
+                            .padding(.vertical, 2)
+                            .background(tint.opacity(0.12), in: Capsule())
+                            .fixedSize()
+                    }
+
+                    Text(model.rawValue)
+                        .font(.caption.monospaced())
+                        .foregroundStyle(.secondary)
+
+                    Text(summary?.costFormatted ?? "暂无费用数据")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+
+                Spacer()
             }
 
-            VStack(alignment: .leading, spacing: 5) {
-                Text(model.displayName)
-                    .font(.title2.weight(.semibold))
-
-                Text(summary?.costFormatted ?? "暂无费用数据")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-            }
-
-            Spacer()
+            Text(model.statusDescription)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
         }
         .padding(18)
         .background(.regularMaterial)
@@ -124,14 +145,14 @@ struct ModelDetailView: View {
     private var tint: Color {
         switch model {
         case .flash: return Theme.flash
-        case .pro:   return Theme.pro
+        case .v4Flash: return Theme.v4Flash
         }
     }
 
     private var gradient: LinearGradient {
         switch model {
         case .flash: return Theme.flashGradient
-        case .pro:   return Theme.proGradient
+        case .v4Flash: return Theme.v4FlashGradient
         }
     }
 

@@ -741,18 +741,10 @@ enum UsageCSVImporter {
     }
 
     private static func normalizedModel(from raw: String) -> String? {
-        let text = raw.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        guard text.isEmpty == false else { return nil }
-
-        if text.contains("deepseek-v4-pro") || text.contains("deepseek-reasoner") || text.contains("reasoner") || text.contains("pro") {
-            return DeepSeekModel.pro.rawValue
-        }
-
-        if text.contains("deepseek-v4-flash") || text.contains("deepseek-chat") || text.contains("flash") || text.contains("chat") {
-            return DeepSeekModel.flash.rawValue
-        }
-
-        return text
+        // Delegate the exact allowlist to the shared model normalization helper.
+        // It accepts current identifiers and explicit historical Flash aliases,
+        // while rejecting Pro/Reasoner and unknown/future models.
+        DeepSeekModel.canonicalName(for: raw)
     }
 
     private static func parseInteger(_ raw: String) -> Int {
