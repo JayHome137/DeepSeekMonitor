@@ -14,6 +14,7 @@
 		1D5AACD7A6F16E22162B8F58 /* DashboardViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = D4D6FB6A5DD5AC16F88D7736 /* DashboardViewModel.swift */; };
 		4262EFF19A0BE1E8B94B43E2 /* SwiftUI.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = B389AD86EFB1F59E5E61C9DA /* SwiftUI.framework */; };
 		48A0F5C82CC44E0CB9DB5A91 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 8E6B1F20B2C6446B8246E2D6 /* Assets.xcassets */; };
+		A15200000000000000000002 /* deepseek-color.png in Resources */ = {isa = PBXBuildFile; fileRef = A15200000000000000000001 /* deepseek-color.png */; };
 		51089EF26B4FF356217B9F05 /* MenuBarManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = FDA5A68BB74347197932E009 /* MenuBarManager.swift */; };
 		591ADEFD029866D0ECF44646 /* WidgetSupport.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 0D86BC52C3D00AFDADA27055 /* WidgetSupport.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		5D5EB0A3776AF4838A37CAF2 /* ModelDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 99E4E267D91D02BAB224B395 /* ModelDetailView.swift */; };
@@ -82,6 +83,7 @@
 		7302C44764457B13E270F1E3 /* DeepSeekWidget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeepSeekWidget.swift; sourceTree = "<group>"; };
 		82D18590D2200F9A388851F4 /* ModelDetailWindowController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModelDetailWindowController.swift; sourceTree = "<group>"; };
 		8E6B1F20B2C6446B8246E2D6 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Resources/Assets.xcassets; sourceTree = SOURCE_ROOT; };
+		A15200000000000000000001 /* deepseek-color.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "Resources/deepseek-color.png"; sourceTree = SOURCE_ROOT; };
 		9742B7090456CB0E7A2771D1 /* DeepSeekMonitor.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = DeepSeekMonitor.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		99E4E267D91D02BAB224B395 /* ModelDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModelDetailView.swift; sourceTree = "<group>"; };
 		A15100000000000000000001 /* SoftwareUpdateController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SoftwareUpdateController.swift; sourceTree = "<group>"; };
@@ -209,6 +211,7 @@
 				31702BEE91CC22DBB8FC599B /* DeepSeekMonitor */,
 				47C7E231CCC4802270B7A742 /* WidgetSupport */,
 				8E6B1F20B2C6446B8246E2D6 /* Assets.xcassets */,
+				A15200000000000000000001 /* deepseek-color.png */,
 				83CA97B318EF4CCDD7A540DA /* Frameworks */,
 				6705CE088D47143FC4125A26 /* Products */,
 			);
@@ -304,6 +307,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				48A0F5C82CC44E0CB9DB5A91 /* Assets.xcassets in Resources */,
+				A15200000000000000000002 /* deepseek-color.png in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

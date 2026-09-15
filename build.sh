@@ -18,7 +18,7 @@ WIDGET_APPEX="WidgetSupport.appex"
 APP_BUNDLE_ID="com.deepseek.monitor"
 WIDGET_BUNDLE_ID="com.deepseek.monitor.widget"
 TEAM_ID="N5YV5FV235"
-MARKETING_VERSION="1.5.2"
+MARKETING_VERSION="1.6"
 GITHUB_REPOSITORY="JayHome137/DeepSeekMonitor"
 SPARKLE_KEY_ACCOUNT="com.deepseek.monitor"
 APPCAST_FILE="appcast.xml"
@@ -597,7 +597,7 @@ build_debug_xcode_and_run() {
         "OBJROOT=$PWD/$xcode_obj_dir" \
         CODE_SIGN_STYLE=Automatic \
         "DEVELOPMENT_TEAM=$TEAM_ID" \
-        "CODE_SIGN_IDENTITY=$code_sign_identity" \
+        CODE_SIGN_IDENTITY="Apple Development" \
         build
 
     if [ ! -d "$xcode_app" ]; then

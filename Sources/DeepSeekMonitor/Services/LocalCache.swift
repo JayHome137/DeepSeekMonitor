@@ -241,7 +241,7 @@ final class LocalCache {
             currentDayCost: dashboard.currentDayCost,
             currentMonthCost: dashboard.currentMonthCost,
             flashCostInCents: dashboard.flashCostInCents,
-            proCostInCents: dashboard.proCostInCents,
+            v4FlashCostInCents: dashboard.v4FlashCostInCents,
             usageUpdatedAt: dashboard.usageLastUpdated ?? dashboard.lastUpdated,
             lastUpdated: dashboard.lastUpdated
         )
@@ -270,8 +270,8 @@ struct DashboardCache: Codable {
     let currentMonthCost: Double
     let flashTotalTokens: Int
     let flashCostInCents: Int
-    let proTotalTokens: Int
-    let proCostInCents: Int
+    let v4FlashTotalTokens: Int
+    let v4FlashCostInCents: Int
     let dailyUsage: [String: Int]  // "2026-05-01" -> tokens
     let balanceLastUpdated: Date?
     let usageLastUpdated: Date?
@@ -288,8 +288,8 @@ struct DashboardCache: Codable {
         case currentMonthCost
         case flashTotalTokens
         case flashCostInCents
-        case proTotalTokens
-        case proCostInCents
+        case v4FlashTotalTokens
+        case v4FlashCostInCents
         case dailyUsage
         case balanceLastUpdated
         case usageLastUpdated
@@ -307,8 +307,8 @@ struct DashboardCache: Codable {
         currentMonthCost: Double,
         flashTotalTokens: Int,
         flashCostInCents: Int,
-        proTotalTokens: Int,
-        proCostInCents: Int,
+        v4FlashTotalTokens: Int,
+        v4FlashCostInCents: Int,
         dailyUsage: [String: Int],
         balanceLastUpdated: Date?,
         usageLastUpdated: Date?,
@@ -324,8 +324,8 @@ struct DashboardCache: Codable {
         self.currentMonthCost = currentMonthCost
         self.flashTotalTokens = flashTotalTokens
         self.flashCostInCents = flashCostInCents
-        self.proTotalTokens = proTotalTokens
-        self.proCostInCents = proCostInCents
+        self.v4FlashTotalTokens = v4FlashTotalTokens
+        self.v4FlashCostInCents = v4FlashCostInCents
         self.dailyUsage = dailyUsage
         self.balanceLastUpdated = balanceLastUpdated
         self.usageLastUpdated = usageLastUpdated
@@ -346,10 +346,21 @@ struct DashboardCache: Codable {
         )
         currentDayCost = try container.decodeIfPresent(Double.self, forKey: .currentDayCost) ?? 0
         currentMonthCost = try container.decodeIfPresent(Double.self, forKey: .currentMonthCost) ?? 0
-        flashTotalTokens = try container.decode(Int.self, forKey: .flashTotalTokens)
-        flashCostInCents = try container.decode(Int.self, forKey: .flashCostInCents)
-        proTotalTokens = try container.decode(Int.self, forKey: .proTotalTokens)
-        proCostInCents = try container.decode(Int.self, forKey: .proCostInCents)
+        let storedFlashTokens = try container.decodeIfPresent(Int.self, forKey: .flashTotalTokens) ?? 0
+        let storedFlashCost = try container.decodeIfPresent(Int.self, forKey: .flashCostInCents) ?? 0
+        if let storedV4FlashTokens = try container.decodeIfPresent(Int.self, forKey: .v4FlashTotalTokens),
+           let storedV4FlashCost = try container.decodeIfPresent(Int.self, forKey: .v4FlashCostInCents) {
+            flashTotalTokens = storedFlashTokens
+            flashCostInCents = storedFlashCost
+            v4FlashTotalTokens = storedV4FlashTokens
+            v4FlashCostInCents = storedV4FlashCost
+        } else {
+            // Old cache: flash was deepseek-chat and pro was Reasoner.
+            flashTotalTokens = 0
+            flashCostInCents = 0
+            v4FlashTotalTokens = storedFlashTokens
+            v4FlashCostInCents = storedFlashCost
+        }
         dailyUsage = try container.decode([String: Int].self, forKey: .dailyUsage)
         lastUpdated = try container.decode(Date.self, forKey: .lastUpdated)
         balanceLastUpdated = try container.decodeIfPresent(Date.self, forKey: .balanceLastUpdated) ?? lastUpdated

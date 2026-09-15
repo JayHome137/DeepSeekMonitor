@@ -68,16 +68,16 @@ final class DashboardViewModel: ObservableObject {
 
     // MARK: - Published: 用量
 
-    /// V4 Flash 用量汇总
+    /// V4.1 Flash 用量汇总
     @Published private(set) var flashUsage: ModelUsageSummary?
-    /// V4 Pro 用量汇总
-    @Published private(set) var proUsage: ModelUsageSummary?
+    /// V4 Flash 用量汇总
+    @Published private(set) var v4FlashUsage: ModelUsageSummary?
     /// 每日用量明细（用于趋势图）
     @Published private(set) var dailyUsage: [Date: Int] = [:]
-    /// V4 Flash 按日明细
+    /// V4.1 Flash 按日明细
     @Published private(set) var flashDailyUsage: [ModelDailyUsagePoint] = []
-    /// V4 Pro 按日明细
-    @Published private(set) var proDailyUsage: [ModelDailyUsagePoint] = []
+    /// V4 Flash 按日明细
+    @Published private(set) var v4FlashDailyUsage: [ModelDailyUsagePoint] = []
 
     // MARK: - Published: 状态
 
@@ -392,10 +392,10 @@ final class DashboardViewModel: ObservableObject {
         currentDayCost = 0
         currentMonthCost = 0
         flashUsage = nil
-        proUsage = nil
+        v4FlashUsage = nil
         dailyUsage = [:]
         flashDailyUsage = []
-        proDailyUsage = []
+        v4FlashDailyUsage = []
         balanceLastUpdated = nil
         usageLastUpdated = nil
         errorMessage = nil
@@ -524,7 +524,7 @@ final class DashboardViewModel: ObservableObject {
 
     /// 总 Token 消耗（所有模型合计）
     var totalTokens: Int {
-        (flashUsage?.totalTokens ?? 0) + (proUsage?.totalTokens ?? 0)
+        (flashUsage?.totalTokens ?? 0) + (v4FlashUsage?.totalTokens ?? 0)
     }
 
     var usageTimeZone: TimeZone {
@@ -604,14 +604,14 @@ final class DashboardViewModel: ObservableObject {
     func summary(for model: DeepSeekModel) -> ModelUsageSummary? {
         switch model {
         case .flash: return flashUsage
-        case .pro:   return proUsage
+        case .v4Flash:   return v4FlashUsage
         }
     }
 
     func dailyPoints(for model: DeepSeekModel) -> [ModelDailyUsagePoint] {
         switch model {
         case .flash: return flashDailyUsage
-        case .pro:   return proDailyUsage
+        case .v4Flash:   return v4FlashDailyUsage
         }
     }
 
@@ -620,24 +620,24 @@ final class DashboardViewModel: ObservableObject {
     /// 按模型聚合用量
     private func aggregateUsage(_ records: [UsageRecord]) {
         let flashRecords = records.filter { normalizedModelName($0.modelName) == .flash }
-        let proRecords   = records.filter { normalizedModelName($0.modelName) == .pro }
+        let v4FlashRecords   = records.filter { normalizedModelName($0.modelName) == .v4Flash }
 
         flashUsage = summary(for: flashRecords, model: .flash)
-        proUsage = summary(for: proRecords, model: .pro)
+        v4FlashUsage = summary(for: v4FlashRecords, model: .v4Flash)
     }
 
     /// 构建按日期的 Token 消耗字典
     private func buildDailyUsage(from records: [UsageRecord]) {
         var totalByDate: [Date: Int] = [:]
         var flashByDate: [Date: (tokens: Int, hit: Int, miss: Int, output: Int, requests: Int)] = [:]
-        var proByDate: [Date: (tokens: Int, hit: Int, miss: Int, output: Int, requests: Int)] = [:]
+        var v4FlashByDate: [Date: (tokens: Int, hit: Int, miss: Int, output: Int, requests: Int)] = [:]
 
         for record in records {
             guard let day = recordDay(from: record.date) else { continue }
-            totalByDate[day, default: 0] += record.totalTokens
 
             switch normalizedModelName(record.modelName) {
             case .flash:
+                totalByDate[day, default: 0] += record.totalTokens
                 var value = flashByDate[day] ?? (0, 0, 0, 0, 0)
                 value.tokens += record.totalTokens
                 value.hit += record.inputCacheHitTokens
@@ -645,14 +645,15 @@ final class DashboardViewModel: ObservableObject {
                 value.output += record.completionTokens
                 value.requests += record.requestCount
                 flashByDate[day] = value
-            case .pro:
-                var value = proByDate[day] ?? (0, 0, 0, 0, 0)
+            case .v4Flash:
+                totalByDate[day, default: 0] += record.totalTokens
+                var value = v4FlashByDate[day] ?? (0, 0, 0, 0, 0)
                 value.tokens += record.totalTokens
                 value.hit += record.inputCacheHitTokens
                 value.miss += record.inputCacheMissTokens
                 value.output += record.completionTokens
                 value.requests += record.requestCount
-                proByDate[day] = value
+                v4FlashByDate[day] = value
             case nil:
                 continue
             }
@@ -660,33 +661,37 @@ final class DashboardViewModel: ObservableObject {
 
         dailyUsage = totalByDate
         flashDailyUsage = buildModelDailyPoints(from: flashByDate)
-        proDailyUsage = buildModelDailyPoints(from: proByDate)
+        v4FlashDailyUsage = buildModelDailyPoints(from: v4FlashByDate)
     }
 
     private func clearUsageData() {
         flashUsage = nil
-        proUsage = nil
+        v4FlashUsage = nil
         dailyUsage = [:]
         flashDailyUsage = []
-        proDailyUsage = []
+        v4FlashDailyUsage = []
         currentMonthCost = 0
         currentDayCost = 0
     }
 
     private func applyUsageRecords(_ records: [UsageRecord]) {
+        // The Usage page currently exposes only the two allowlisted Flash
+        // identifiers. Keep unsupported/legacy model rows out of every
+        // dashboard aggregate, including the balance cost cards.
+        let supportedRecords = records.filter { normalizedModelName($0.modelName) != nil }
         let recentRange = UsageAutoImportService.expectedRecentExportRange(
             timeZone: usageTimeZone
         )
-        let recentRecords = records.filter { recentRange.contains($0.date) }
-        let currencyRecords = recentRecords.isEmpty ? records : recentRecords
+        let recentRecords = supportedRecords.filter { recentRange.contains($0.date) }
+        let currencyRecords = recentRecords.isEmpty ? supportedRecords : recentRecords
         usageCurrencyCode = preferredUsageCurrency(from: currencyRecords)
         if let lastBalanceResponse {
             applyBalanceResponse(lastBalanceResponse)
         }
         aggregateUsage(recentRecords)
         buildDailyUsage(from: recentRecords)
-        currentDayCost = computeCurrentDayCost(from: records)
-        currentMonthCost = computeCurrentMonthCost(from: records)
+        currentDayCost = computeCurrentDayCost(from: supportedRecords)
+        currentMonthCost = computeCurrentMonthCost(from: supportedRecords)
     }
 
     private func restoreImportedUsageIfAvailable(unavailableMessage: String) -> Bool {
@@ -754,10 +759,10 @@ final class DashboardViewModel: ObservableObject {
             costInCents: cached.flashCostInCents
         )
 
-        proUsage = cachedSummary(
-            model: .pro,
-            totalTokens: cached.proTotalTokens,
-            costInCents: cached.proCostInCents
+        v4FlashUsage = cachedSummary(
+            model: .v4Flash,
+            totalTokens: cached.v4FlashTotalTokens,
+            costInCents: cached.v4FlashCostInCents
         )
 
         // 恢复 Date-keyed 字典
@@ -792,8 +797,8 @@ final class DashboardViewModel: ObservableObject {
             currentMonthCost: currentMonthCost,
             flashTotalTokens: flashUsage?.totalTokens ?? 0,
             flashCostInCents: flashUsage?.costInCents ?? 0,
-            proTotalTokens: proUsage?.totalTokens ?? 0,
-            proCostInCents: proUsage?.costInCents ?? 0,
+            v4FlashTotalTokens: v4FlashUsage?.totalTokens ?? 0,
+            v4FlashCostInCents: v4FlashUsage?.costInCents ?? 0,
             dailyUsage: dailyUsageStrings,
             balanceLastUpdated: balanceLastUpdated,
             usageLastUpdated: usageLastUpdated,
@@ -907,14 +912,7 @@ final class DashboardViewModel: ObservableObject {
     }
 
     private func normalizedModelName(_ name: String) -> DeepSeekModel? {
-        let normalized = name.lowercased()
-        if normalized.contains("reasoner") || normalized.contains("pro") {
-            return .pro
-        }
-        if normalized.contains("chat") || normalized.contains("flash") {
-            return .flash
-        }
-        return nil
+        DeepSeekModel.from(rawName: name)
     }
 
     private func recordDay(from raw: String) -> Date? {

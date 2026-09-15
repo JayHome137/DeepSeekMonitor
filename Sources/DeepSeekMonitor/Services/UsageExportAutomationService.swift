@@ -604,7 +604,9 @@ final class UsageExportAutomationService: NSObject, ObservableObject {
             .filter(visible)
             .some((node) => {
               const text = semantic(textOf(node));
-              return text.includes('时间维度本月') ||
+              return text === '本月' ||
+                text === 'thismonth' ||
+                text.includes('时间维度本月') ||
                 text.includes('时间范围本月') ||
                 text.includes('timerangethismonth') ||
                 text.includes('timedimensionthismonth') ||

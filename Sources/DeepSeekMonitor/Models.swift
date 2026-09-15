@@ -176,7 +176,7 @@ struct UsageResponse: Codable {
 
 struct UsageRecord: Codable, Identifiable {
     let id: String
-    let modelName: String       // 模型名称: "deepseek-chat", "deepseek-reasoner" 等
+    let modelName: String       // 模型名称: "deepseek-flash" / "deepseek-v4-flash"
     let totalTokens: Int        // 总 Token 消耗
     let promptTokens: Int       // 输入 Token
     let inputCacheHitTokens: Int
@@ -327,25 +327,68 @@ struct UsageRecord: Codable, Identifiable {
 
 // MARK: - 本地展示模型
 
-/// 模型显示名称映射
+/// 官方 Usage 导出中的两类模型名称，不代表两个独立在役模型。
+///
+/// `from(rawName:)` 是唯一的模型归一化入口。它只接受当前模型名和明确列出的
+/// 历史别名，未知名称会被忽略，避免将未来模型错误地计入现有卡片。
 enum DeepSeekModel: String, CaseIterable {
-    case flash  = "deepseek-chat"      // V4 Flash
-    case pro    = "deepseek-reasoner"   // V4 Pro (推理模型)
+    case flash = "deepseek-flash"
+    case v4Flash = "deepseek-v4-flash"
 
     var displayName: String {
         switch self {
-        case .flash: return "V4 Flash"
-        case .pro:   return "V4 Pro"
+        case .flash: return "V4.1 Flash"
+        case .v4Flash: return "V4 Flash"
+        }
+    }
+
+    var statusLabel: String {
+        switch self {
+        case .flash: return "新模型"
+        case .v4Flash: return "旧名称"
+        }
+    }
+
+    /// Model lifecycle follows the footnotes on the official pricing page:
+    /// https://api-docs.deepseek.com/zh-cn/quick_start/pricing/
+    var statusDescription: String {
+        switch self {
+        case .flash:
+            return "当前 Flash 模型，推荐使用 deepseek-flash 调用。"
+        case .v4Flash:
+            return "原 V4 Flash 模型已下线。旧名称仍可调用，现由 V4.1 Flash 提供服务；此卡保留旧名称的用量统计。"
         }
     }
 
     var systemImageName: String {
-        switch self {
-        case .flash: return "bolt.fill"
-        case .pro:   return "brain.head.profile"
+        "bolt.fill"
+    }
+
+    /// Maps current model identifiers and supported historical aliases to the
+    /// two models shown by the product. The comparison is case-insensitive and
+    /// ignores surrounding whitespace.
+    static func from(rawName: String) -> DeepSeekModel? {
+        let normalized = rawName
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+
+        switch normalized {
+        case "deepseek-flash":
+            return .flash
+        case "deepseek-v4-flash", "deepseek-v4-flash-vision-exp", "deepseek-chat":
+            return .v4Flash
+        case "deepseek-v4-pro", "deepseek-v4-pro-0813", "deepseek-reasoner":
+            // The old Pro/Reasoner family is intentionally not displayed.
+            return nil
+        default:
+            return nil
         }
     }
 
+    /// Returns the canonical identifier for a supported model name.
+    static func canonicalName(for rawName: String) -> String? {
+        from(rawName: rawName)?.rawValue
+    }
 }
 
 /// 聚合后的模型用量数据
@@ -399,7 +442,86 @@ struct WidgetSnapshot: Codable {
     let currentDayCost: Double
     let currentMonthCost: Double
     let flashCostInCents: Int
-    let proCostInCents: Int
+    let v4FlashCostInCents: Int
     let usageUpdatedAt: Date
     let lastUpdated: Date
+
+    private enum CodingKeys: String, CodingKey {
+        case isWidgetEnabled
+        case totalBalance
+        case isAccountAvailable
+        case balanceCurrencyCode
+        case usageCurrencyCode
+        case currentDayCost
+        case currentMonthCost
+        case flashCostInCents
+        case v4FlashCostInCents
+        case legacyProCostInCents = "proCostInCents"
+        case usageUpdatedAt
+        case lastUpdated
+    }
+
+    init(
+        isWidgetEnabled: Bool,
+        totalBalance: Double,
+        isAccountAvailable: Bool,
+        balanceCurrencyCode: String,
+        usageCurrencyCode: String,
+        currentDayCost: Double,
+        currentMonthCost: Double,
+        flashCostInCents: Int,
+        v4FlashCostInCents: Int,
+        usageUpdatedAt: Date,
+        lastUpdated: Date
+    ) {
+        self.isWidgetEnabled = isWidgetEnabled
+        self.totalBalance = totalBalance
+        self.isAccountAvailable = isAccountAvailable
+        self.balanceCurrencyCode = balanceCurrencyCode
+        self.usageCurrencyCode = usageCurrencyCode
+        self.currentDayCost = currentDayCost
+        self.currentMonthCost = currentMonthCost
+        self.flashCostInCents = flashCostInCents
+        self.v4FlashCostInCents = v4FlashCostInCents
+        self.usageUpdatedAt = usageUpdatedAt
+        self.lastUpdated = lastUpdated
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        isWidgetEnabled = try container.decode(Bool.self, forKey: .isWidgetEnabled)
+        totalBalance = try container.decode(Double.self, forKey: .totalBalance)
+        isAccountAvailable = try container.decode(Bool.self, forKey: .isAccountAvailable)
+        balanceCurrencyCode = try container.decode(String.self, forKey: .balanceCurrencyCode)
+        usageCurrencyCode = try container.decode(String.self, forKey: .usageCurrencyCode)
+        currentDayCost = try container.decode(Double.self, forKey: .currentDayCost)
+        currentMonthCost = try container.decode(Double.self, forKey: .currentMonthCost)
+        let storedFlash = try container.decodeIfPresent(Int.self, forKey: .flashCostInCents) ?? 0
+        if let storedV4Flash = try container.decodeIfPresent(Int.self, forKey: .v4FlashCostInCents) {
+            flashCostInCents = storedFlash
+            v4FlashCostInCents = storedV4Flash
+        } else {
+            // Old snapshots used flash for deepseek-chat and pro for Reasoner.
+            flashCostInCents = 0
+            v4FlashCostInCents = storedFlash
+        }
+        usageUpdatedAt = try container.decodeIfPresent(Date.self, forKey: .usageUpdatedAt)
+            ?? (try container.decode(Date.self, forKey: .lastUpdated))
+        lastUpdated = try container.decode(Date.self, forKey: .lastUpdated)
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(isWidgetEnabled, forKey: .isWidgetEnabled)
+        try container.encode(totalBalance, forKey: .totalBalance)
+        try container.encode(isAccountAvailable, forKey: .isAccountAvailable)
+        try container.encode(balanceCurrencyCode, forKey: .balanceCurrencyCode)
+        try container.encode(usageCurrencyCode, forKey: .usageCurrencyCode)
+        try container.encode(currentDayCost, forKey: .currentDayCost)
+        try container.encode(currentMonthCost, forKey: .currentMonthCost)
+        try container.encode(flashCostInCents, forKey: .flashCostInCents)
+        try container.encode(v4FlashCostInCents, forKey: .v4FlashCostInCents)
+        try container.encode(usageUpdatedAt, forKey: .usageUpdatedAt)
+        try container.encode(lastUpdated, forKey: .lastUpdated)
+    }
 }

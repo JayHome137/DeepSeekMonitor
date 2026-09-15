@@ -314,7 +314,7 @@ final class MenuBarManager: NSObject {
         let model: DeepSeekModel
         switch host {
         case "flash": model = .flash
-        case "pro": model = .pro
+        case "v4-flash": model = .v4Flash
         default: return
         }
 

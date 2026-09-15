@@ -44,14 +44,14 @@ final class UsageImportTests: XCTestCase {
         let directory = try makeTemporaryDirectory()
         let amountLines = [
             "user_id,utc_date,model,api_key_name,api_key,type,price,amount",
-            "account,20260725,deepseek-v4-pro,\"Team, Primary\",sk-masked,input_cache_hit_tokens,0.000000025,1000",
-            "account,20260725,deepseek-v4-pro,\"Team, Primary\",sk-masked,input_cache_miss_tokens,0.000003,500",
-            "account,20260725,deepseek-v4-pro,\"Team, Primary\",sk-masked,output_tokens,0.000006,200",
-            "account,20260725,deepseek-v4-pro,\"Team, Primary\",sk-masked,request_count,,3",
+            "account,20260725,deepseek-v4-flash,\"Team, Primary\",sk-masked,input_cache_hit_tokens,0.000000025,1000",
+            "account,20260725,deepseek-v4-flash,\"Team, Primary\",sk-masked,input_cache_miss_tokens,0.000003,500",
+            "account,20260725,deepseek-v4-flash,\"Team, Primary\",sk-masked,output_tokens,0.000006,200",
+            "account,20260725,deepseek-v4-flash,\"Team, Primary\",sk-masked,request_count,,3",
         ]
         let costLines = [
             "user_id,utc_date,model,wallet_type,cost,currency",
-            "account,20260725,deepseek-v4-pro,paid,1.2345,USD",
+            "account,20260725,deepseek-v4-flash,paid,1.2345,USD",
         ]
 
         var amountData = Data([0xEF, 0xBB, 0xBF])
@@ -66,7 +66,7 @@ final class UsageImportTests: XCTestCase {
 
         XCTAssertFalse(result.fileNameEndDateIsInclusive)
         XCTAssertEqual(record.date, "2026-07-25")
-        XCTAssertEqual(record.modelName, DeepSeekModel.pro.rawValue)
+        XCTAssertEqual(record.modelName, "deepseek-v4-flash")
         XCTAssertEqual(record.totalTokens, 1_700)
         XCTAssertEqual(record.inputCacheHitTokens, 1_000)
         XCTAssertEqual(record.inputCacheMissTokens, 500)
@@ -79,14 +79,14 @@ final class UsageImportTests: XCTestCase {
         let directory = try makeTemporaryDirectory()
         let amountLines = [
             "user_id,start_time_iso,end_time_iso,model,api_key_name,api_key,type,price,amount",
-            "account,2026-08-13T00:00:00+08:00,2026-08-14T00:00:00+08:00,deepseek-v4-pro,\"Team, Primary\",sk-masked,input_cache_hit_tokens,0.000000025,1000",
-            "account,2026-08-13T00:00:00+08:00,2026-08-14T00:00:00+08:00,deepseek-v4-pro,\"Team, Primary\",sk-masked,input_cache_miss_tokens,0.000003,500",
-            "account,2026-08-13T00:00:00+08:00,2026-08-14T00:00:00+08:00,deepseek-v4-pro,\"Team, Primary\",sk-masked,output_tokens,0.000006,200",
-            "account,2026-08-13T00:00:00+08:00,2026-08-14T00:00:00+08:00,deepseek-v4-pro,\"Team, Primary\",sk-masked,request_count,,3",
+            "account,2026-08-13T00:00:00+08:00,2026-08-14T00:00:00+08:00,deepseek-v4-flash,\"Team, Primary\",sk-masked,input_cache_hit_tokens,0.000000025,1000",
+            "account,2026-08-13T00:00:00+08:00,2026-08-14T00:00:00+08:00,deepseek-v4-flash,\"Team, Primary\",sk-masked,input_cache_miss_tokens,0.000003,500",
+            "account,2026-08-13T00:00:00+08:00,2026-08-14T00:00:00+08:00,deepseek-v4-flash,\"Team, Primary\",sk-masked,output_tokens,0.000006,200",
+            "account,2026-08-13T00:00:00+08:00,2026-08-14T00:00:00+08:00,deepseek-v4-flash,\"Team, Primary\",sk-masked,request_count,,3",
         ]
         let costLines = [
             "user_id,start_time_iso,end_time_iso,model,wallet_type,cost,currency",
-            "account,2026-08-13T00:00:00+08:00,2026-08-14T00:00:00+08:00,deepseek-v4-pro,paid,1.2345,CNY",
+            "account,2026-08-13T00:00:00+08:00,2026-08-14T00:00:00+08:00,deepseek-v4-flash,paid,1.2345,CNY",
         ]
         var amountData = Data([0xEF, 0xBB, 0xBF])
         amountData.append(Data((amountLines.joined(separator: "\r\n") + "\r\n").utf8))
@@ -108,6 +108,45 @@ final class UsageImportTests: XCTestCase {
         XCTAssertEqual(record.completionTokens, 200)
         XCTAssertEqual(record.requestCount, 3)
         XCTAssertEqual(record.costAmount(for: "CNY"), decimal("1.2345"))
+    }
+
+    func testCurrentUsageModelsImportTogetherAndUnknownModelsAreIgnored() throws {
+        let directory = try makeTemporaryDirectory()
+        let amountURL = try write(
+            """
+            user_id,start_time_iso,end_time_iso,model,api_key_name,api_key,type,price,amount
+            account,2026-09-10T00:00:00+08:00,2026-09-11T00:00:00+08:00,deepseek-flash,test,masked-key,input_cache_hit_tokens,0.000001,100
+            account,2026-09-10T00:00:00+08:00,2026-09-11T00:00:00+08:00,deepseek-flash,test,masked-key,request_count,0,2
+            account,2026-09-10T00:00:00+08:00,2026-09-11T00:00:00+08:00,deepseek-v4-flash,test,masked-key,output_tokens,0.000004,200
+            account,2026-09-10T00:00:00+08:00,2026-09-11T00:00:00+08:00,deepseek-v4-flash,test,masked-key,request_count,0,3
+            account,2026-09-10T00:00:00+08:00,2026-09-11T00:00:00+08:00,deepseek-v4-pro,test,masked-key,output_tokens,0.001,999
+            account,2026-09-10T00:00:00+08:00,2026-09-11T00:00:00+08:00,deepseek-future-preview,test,masked-key,output_tokens,0.001,999
+            """,
+            named: "amount-2026-09-01_2026-09-10.csv",
+            in: directory
+        )
+        let costURL = try write(
+            """
+            user_id,start_time_iso,end_time_iso,model,wallet_type,cost,currency
+            account,2026-09-10T00:00:00+08:00,2026-09-11T00:00:00+08:00,deepseek-flash,paid,0.12,CNY
+            account,2026-09-10T00:00:00+08:00,2026-09-11T00:00:00+08:00,deepseek-v4-flash,paid,0.34,CNY
+            account,2026-09-10T00:00:00+08:00,2026-09-11T00:00:00+08:00,deepseek-v4-pro,paid,9.99,CNY
+            account,2026-09-10T00:00:00+08:00,2026-09-11T00:00:00+08:00,deepseek-future-preview,paid,9.99,CNY
+            """,
+            named: "cost-2026-09-01_2026-09-10.csv",
+            in: directory
+        )
+
+        let records = try UsageCSVImporter.importRecords(from: amountURL, costURL: costURL)
+
+        XCTAssertEqual(Set(records.map(\.modelName)), ["deepseek-flash", "deepseek-v4-flash"])
+        XCTAssertEqual(records.count, 2)
+        XCTAssertEqual(records.first(where: { $0.modelName == "deepseek-flash" })?.totalTokens, 100)
+        XCTAssertEqual(records.first(where: { $0.modelName == "deepseek-v4-flash" })?.totalTokens, 200)
+        XCTAssertEqual(records.first(where: { $0.modelName == "deepseek-flash" })?.requestCount, 2)
+        XCTAssertEqual(records.first(where: { $0.modelName == "deepseek-v4-flash" })?.requestCount, 3)
+        XCTAssertEqual(records.first(where: { $0.modelName == "deepseek-flash" })?.costAmount(for: "CNY"), decimal("0.12"))
+        XCTAssertEqual(records.first(where: { $0.modelName == "deepseek-v4-flash" })?.costAmount(for: "CNY"), decimal("0.34"))
     }
 
     func testISOExportKeepsCalendarDateForUTCAndPositiveOffsets() throws {
@@ -236,8 +275,8 @@ final class UsageImportTests: XCTestCase {
         let amountURL = try write(
             """
             api_key_name,utc_date,model,type,price,amount
-            test,2026-07-24,deepseek-v4-pro,input_cache_hit_tokens,0.004,1
-            test,2026-07-24,deepseek-v4-pro,output_tokens,0.004,1
+            test,2026-07-24,deepseek-v4-flash,input_cache_hit_tokens,0.004,1
+            test,2026-07-24,deepseek-v4-flash,output_tokens,0.004,1
             """,
             named: "amount.csv",
             in: directory
@@ -260,7 +299,7 @@ final class UsageImportTests: XCTestCase {
         let amountURL = try write(
             """
             api_key_name,utc_date,model,type,price,amount
-            test,2026-07-24,deepseek-v4-pro,output_tokens,0,1
+            test,2026-07-24,deepseek-v4-flash,output_tokens,0,1
             """,
             named: "amount.csv",
             in: directory
@@ -268,8 +307,8 @@ final class UsageImportTests: XCTestCase {
         let costURL = try write(
             """
             api_key_name,utc_date,model,currency,wallet_type,cost
-            test,2026-07-24,deepseek-v4-pro,CNY,paid,0.50
-            test,2026-07-24,deepseek-v4-pro,USD,paid,0.10
+            test,2026-07-24,deepseek-v4-flash,CNY,paid,0.50
+            test,2026-07-24,deepseek-v4-flash,USD,paid,0.10
             """,
             named: "cost.csv",
             in: directory
@@ -303,18 +342,18 @@ final class UsageImportTests: XCTestCase {
 
         _ = try write(
             """
-            api_key_name,utc_date,model,type,price,amount
-            test,2026-07-24,deepseek-v4-flash,output_tokens,0.001,2
+            user_id,start_time_iso,end_time_iso,model,api_key_name,api_key,type,price,amount
+            account,2026-09-10T00:00:00+08:00,2026-09-11T00:00:00+08:00,deepseek-v4-flash,test,masked-key,output_tokens,0.001,2
             """,
-            named: "amount-2026-07-20_2026-07-27.csv",
+            named: "amount-2026-09-01_2026-09-10.csv",
             in: exportDirectory
         )
         _ = try write(
             """
-            api_key_name,utc_date,model,currency,wallet_type,cost
-            test,2026-07-24,deepseek-v4-flash,USD,paid,0.25
+            user_id,start_time_iso,end_time_iso,model,wallet_type,cost,currency
+            account,2026-09-10T00:00:00+08:00,2026-09-11T00:00:00+08:00,deepseek-v4-flash,paid,0.25,USD
             """,
-            named: "cost-2026-07-20_2026-07-27.csv",
+            named: "cost-2026-09-01_2026-09-10.csv",
             in: exportDirectory
         )
 
@@ -331,7 +370,7 @@ final class UsageImportTests: XCTestCase {
 
         XCTAssertEqual(
             Set(prepared.selectedNames),
-            ["amount-2026-07-20_2026-07-27.csv", "cost-2026-07-20_2026-07-27.csv"]
+            ["amount-2026-09-01_2026-09-10.csv", "cost-2026-09-01_2026-09-10.csv"]
         )
         XCTAssertEqual(record.totalTokens, 2)
         XCTAssertEqual(record.costAmount(for: "USD"), decimal("0.25"))
@@ -468,7 +507,7 @@ final class UsageImportTests: XCTestCase {
         )
         let records = [
             makeUsageRecord(date: "2026-08-01", model: .flash, tokens: 10),
-            makeUsageRecord(date: "2026-08-14", model: .pro, tokens: 20),
+            makeUsageRecord(date: "2026-08-14", modelName: "deepseek-reasoner", tokens: 20),
         ]
         let resolvedRange = try XCTUnwrap(
             UsageAutoImportService.resolvedExportDateRange(
@@ -537,7 +576,7 @@ final class UsageImportTests: XCTestCase {
         )
         let records = [
             makeUsageRecord(date: "2026-08-14", model: .flash, tokens: 10),
-            makeUsageRecord(date: "2026-08-15", model: .pro, tokens: 20),
+            makeUsageRecord(date: "2026-08-15", modelName: "deepseek-reasoner", tokens: 20),
         ]
 
         XCTAssertThrowsError(
@@ -700,11 +739,11 @@ final class UsageImportTests: XCTestCase {
             makeUsageRecord(date: "2026-06-30", model: .flash, tokens: 1),
             makeUsageRecord(date: "2026-07-01", model: .flash, tokens: 2),
             makeUsageRecord(date: "2026-07-20", model: .flash, tokens: 3),
-            makeUsageRecord(date: "2026-07-21", model: .pro, tokens: 4),
+            makeUsageRecord(date: "2026-07-21", modelName: "deepseek-reasoner", tokens: 4),
         ]
         let incoming = [
             makeUsageRecord(date: "2026-07-20", model: .flash, tokens: 30),
-            makeUsageRecord(date: "2026-07-25", model: .pro, tokens: 50),
+            makeUsageRecord(date: "2026-07-25", modelName: "deepseek-reasoner", tokens: 50),
         ]
 
         let merged = LocalCache.mergedUsageRecords(
@@ -747,7 +786,7 @@ final class UsageImportTests: XCTestCase {
         )
         let incoming = [
             makeUsageRecord(date: "2026-08-01", model: .flash, tokens: 200),
-            makeUsageRecord(date: "2026-08-02", model: .pro, tokens: 300),
+            makeUsageRecord(date: "2026-08-02", modelName: "deepseek-reasoner", tokens: 300),
         ]
         let merged = cache.mergeUsageRecords(
             incoming,
@@ -877,9 +916,17 @@ final class UsageImportTests: XCTestCase {
         model: DeepSeekModel,
         tokens: Int
     ) -> UsageRecord {
+        makeUsageRecord(date: date, modelName: model.rawValue, tokens: tokens)
+    }
+
+    private func makeUsageRecord(
+        date: String,
+        modelName: String,
+        tokens: Int
+    ) -> UsageRecord {
         UsageRecord(
-            id: "\(date)-\(model.rawValue)",
-            modelName: model.rawValue,
+            id: "\(date)-\(modelName)",
+            modelName: modelName,
             totalTokens: tokens,
             promptTokens: tokens,
             completionTokens: 0,
