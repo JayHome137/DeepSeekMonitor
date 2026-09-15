@@ -89,7 +89,6 @@ DeepSeek API ───────────────┐
 
 - DeepSeek `/v1/usage` 对部分账户可能返回 404，但不影响余额查询；应用会回退到官方网页导出或手动导入。
 - 自动同步只处理官方当前月份 ZIP；近 7 天、近 30 天和历史数据使用手动导入。
-- 当前官方 ZIP 包含 `amount-YYYY-MM-DD_YYYY-MM-DD.csv` 与 `cost-YYYY-MM-DD_YYYY-MM-DD.csv`，两者日期范围和时区必须匹配。`amount` CSV 字段为 `user_id`、`start_time_iso`、`end_time_iso`、`model`、`api_key_name`、`api_key`、`type`、`price`、`amount`；`cost` CSV 字段为 `user_id`、`start_time_iso`、`end_time_iso`、`model`、`wallet_type`、`cost`、`currency`。
 - 两张模型卡代表导出记录中的两个 `model` 标识。V4.1 Flash 是新模型；V4 Flash 是旧模型名，原模型已下线，旧名称的 API 请求由 V4.1 Flash 提供服务并按 Flash 价格计费。V4 Pro 仍由官方提供服务，仅不在本应用当前面板展示范围内；如果导出范围内有 Pro 用量，原始 CSV 可能包含 Pro 行，应用会按当前面板范围跳过这些行。
 - 费用以官方导出的 `cost` 为准；分时单价和模型计费规则请以 [DeepSeek 官方定价页](https://api-docs.deepseek.com/zh-cn/quick_start/pricing/) 为准，应用不会用本地硬编码价格覆盖官方费用。
 - 统计日期以官方导出文件携带的时区为准，网页数据可能延迟约 5 分钟。
