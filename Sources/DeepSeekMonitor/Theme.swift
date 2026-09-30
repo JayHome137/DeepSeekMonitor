@@ -35,9 +35,9 @@ enum Theme {
         startPoint: .leading, endPoint: .trailing
     )
 
-    /// V4 Flash — 紫色系
-    static let v4Flash = Color.purple
-    static let v4FlashGradient = LinearGradient(
+    /// V4 Pro — 紫色系
+    static let pro = Color.purple
+    static let proGradient = LinearGradient(
         colors: [.purple, .indigo.opacity(0.7)],
         startPoint: .leading, endPoint: .trailing
     )

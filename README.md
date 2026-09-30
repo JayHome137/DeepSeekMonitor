@@ -15,7 +15,7 @@
 
 ## 📌 项目介绍
 
-DeepSeek Monitor 是一款菜单栏应用，集中显示账户余额、Token 用量、模型成本和近期趋势。模型用量按官方 Usage 导出的 `model` 标识分为 **V4.1 Flash**（`deepseek-flash`）与 **V4 Flash**（`deepseek-v4-flash`）两类。
+DeepSeek Monitor 是一款菜单栏应用，集中显示账户余额、Token 用量、模型成本和近期趋势。模型用量按官方 Usage 导出的 `model` 标识分为 **V4.1 Flash**（`deepseek-flash`）与 **V4 Pro**（`deepseek-v4-pro`）两类。
 
 余额优先通过 DeepSeek API 获取；当 `/v1/usage` 对账户返回 404，或网页数据需要补充时，应用使用 DeepSeek 官方 Usage ZIP/CSV 导出。网页自动导出只在用户启用后运行，定时任务保持静默；首次登录或登录失效时才显示网页窗口。
 
@@ -89,7 +89,7 @@ DeepSeek API ───────────────┐
 
 - DeepSeek `/v1/usage` 对部分账户可能返回 404，但不影响余额查询；应用会回退到官方网页导出或手动导入。
 - 自动同步只处理官方当前月份 ZIP；近 7 天、近 30 天和历史数据使用手动导入。
-- 两张模型卡代表导出记录中的两个 `model` 标识。V4.1 Flash 是新模型；V4 Flash 是旧模型名，原模型已下线，旧名称的 API 请求由 V4.1 Flash 提供服务并按 Flash 价格计费。V4 Pro 仍由官方提供服务，仅不在本应用当前面板展示范围内；如果导出范围内有 Pro 用量，原始 CSV 可能包含 Pro 行，应用会按当前面板范围跳过这些行。
+- 两张模型卡代表导出记录中的两个模型族。V4.1 Flash 是当前 Flash 模型；旧的 `deepseek-v4-flash`、`deepseek-v4-flash-vision-exp` 和 `deepseek-chat` 记录归入 Flash。V4 Pro 及其 `deepseek-v4-pro-0813`、`deepseek-reasoner` 兼容名称归入 Pro。未知模型会被忽略，原始 CSV 不会被修改。
 - 费用以官方导出的 `cost` 为准；分时单价和模型计费规则请以 [DeepSeek 官方定价页](https://api-docs.deepseek.com/zh-cn/quick_start/pricing/) 为准，应用不会用本地硬编码价格覆盖官方费用。
 - 统计日期以官方导出文件携带的时区为准，网页数据可能延迟约 5 分钟。
 - 自动导入失败的文件会保留在 `usage-sync/failed/`，不会静默删除，方便排查或重新导入；官方原始文件可能含有 `api_key` 列，请按敏感文件保管。

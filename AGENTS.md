@@ -64,7 +64,7 @@ AppDelegate -> MenuBarManager -> FloatingPanel / SettingsWindow / ModelDetailWin
 | `Sources/DeepSeekMonitor/Services/LocalCache.swift` | Dashboard cache and WidgetKit App Group snapshot. |
 | `Sources/DeepSeekMonitor/Views/ContentView.swift` | Main menu bar dashboard. |
 | `Sources/DeepSeekMonitor/Views/SettingsView.swift` | API key, widget, login item, update, refresh, and import/export settings. |
-| `Sources/DeepSeekMonitor/Views/ModelDetailWindowController.swift` | V4.1 Flash/V4 Flash model detail side panel. |
+| `Sources/DeepSeekMonitor/Views/ModelDetailWindowController.swift` | V4.1 Flash/V4 Pro model detail side panel. |
 | `Sources/WidgetSupport/TimelineProvider.swift` | Widget timeline provider reading shared data. |
 | `Sources/WidgetSupport/WidgetViews.swift` | Medium WidgetKit UI and deep links. |
 | `Resources/Assets.xcassets/DeepSeekMenuBarTemplate.imageset/` | Native 1x/2x template menu bar icon. |
@@ -151,13 +151,12 @@ UserDefaults, widget snapshots, diagnostics, test fixtures, or release notes.
   on `platform.deepseek.com`.
 - Automatic browser exports must remain silent; explicit login actions may show the
   WKWebView window.
-- The dashboard groups Usage records by the exported `model` identifiers
-  `deepseek-flash` (V4.1 Flash) and `deepseek-v4-flash` (V4 Flash). V4.1 Flash is
-  the new model; the original V4 Flash is retired, and API requests using its
-  legacy name are served by V4.1 Flash at Flash pricing. V4 Pro remains available
-  from DeepSeek but is outside the current dashboard scope. Official exports may
-  still contain Pro rows when the selected range includes Pro usage; the importer
-  intentionally skips them while leaving the original export untouched.
+- The dashboard groups Usage records into two cards: `deepseek-flash` (V4.1 Flash)
+  and `deepseek-v4-pro` (V4 Pro). The retired Flash identifiers
+  `deepseek-v4-flash`, `deepseek-v4-flash-vision-exp`, and `deepseek-chat` remain
+  compatible Flash aliases. `deepseek-v4-pro-0813` and `deepseek-reasoner` remain
+  compatible Pro aliases. Official exports may contain any of these identifiers;
+  unknown future models are ignored while the original export remains untouched.
 - Official ZIP exports contain matching `amount-YYYY-MM-DD_YYYY-MM-DD.csv` and
   `cost-YYYY-MM-DD_YYYY-MM-DD.csv` files. Amount fields include `user_id`,
   `start_time_iso`, `end_time_iso`, `model`, `api_key_name`, `api_key`, `type`,

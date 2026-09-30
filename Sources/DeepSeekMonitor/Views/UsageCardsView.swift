@@ -4,14 +4,14 @@ import SwiftUI
 
 struct UsageCardsView: View {
     let flashUsage: ModelUsageSummary?
-    let v4FlashUsage: ModelUsageSummary?
+    let proUsage: ModelUsageSummary?
     let isUnavailable: Bool
     let onOpenModelDetail: (DeepSeekModel) -> Void
 
     @Environment(\.colorScheme) var colorScheme
 
     private var maxTokens: Int {
-        max(flashUsage?.totalTokens ?? 0, v4FlashUsage?.totalTokens ?? 0, 1)
+        max(flashUsage?.totalTokens ?? 0, proUsage?.totalTokens ?? 0, 1)
     }
 
     var body: some View {
@@ -26,11 +26,11 @@ struct UsageCardsView: View {
                 onOpenDetail: onOpenModelDetail
             )
             UsageCardRow(
-                model: .v4Flash,
-                usage: v4FlashUsage,
+                model: .pro,
+                usage: proUsage,
                 maxTokens: maxTokens,
-                gradient: Theme.v4FlashGradient,
-                tint: Theme.v4Flash,
+                gradient: Theme.proGradient,
+                tint: Theme.pro,
                 isUnavailable: isUnavailable,
                 onOpenDetail: onOpenModelDetail
             )

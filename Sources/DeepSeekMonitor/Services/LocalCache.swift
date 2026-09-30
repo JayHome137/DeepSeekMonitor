@@ -241,7 +241,7 @@ final class LocalCache {
             currentDayCost: dashboard.currentDayCost,
             currentMonthCost: dashboard.currentMonthCost,
             flashCostInCents: dashboard.flashCostInCents,
-            v4FlashCostInCents: dashboard.v4FlashCostInCents,
+            proCostInCents: dashboard.proCostInCents,
             usageUpdatedAt: dashboard.usageLastUpdated ?? dashboard.lastUpdated,
             lastUpdated: dashboard.lastUpdated
         )
@@ -270,8 +270,8 @@ struct DashboardCache: Codable {
     let currentMonthCost: Double
     let flashTotalTokens: Int
     let flashCostInCents: Int
-    let v4FlashTotalTokens: Int
-    let v4FlashCostInCents: Int
+    let proTotalTokens: Int
+    let proCostInCents: Int
     let dailyUsage: [String: Int]  // "2026-05-01" -> tokens
     let balanceLastUpdated: Date?
     let usageLastUpdated: Date?
@@ -288,8 +288,11 @@ struct DashboardCache: Codable {
         case currentMonthCost
         case flashTotalTokens
         case flashCostInCents
-        case v4FlashTotalTokens
-        case v4FlashCostInCents
+        case proTotalTokens
+        case proCostInCents
+        case legacyV4FlashTotalTokens = "v4FlashTotalTokens"
+        case legacyV4FlashCostInCents = "v4FlashCostInCents"
+        case modelSchemaVersion
         case dailyUsage
         case balanceLastUpdated
         case usageLastUpdated
@@ -307,8 +310,8 @@ struct DashboardCache: Codable {
         currentMonthCost: Double,
         flashTotalTokens: Int,
         flashCostInCents: Int,
-        v4FlashTotalTokens: Int,
-        v4FlashCostInCents: Int,
+        proTotalTokens: Int,
+        proCostInCents: Int,
         dailyUsage: [String: Int],
         balanceLastUpdated: Date?,
         usageLastUpdated: Date?,
@@ -324,8 +327,8 @@ struct DashboardCache: Codable {
         self.currentMonthCost = currentMonthCost
         self.flashTotalTokens = flashTotalTokens
         self.flashCostInCents = flashCostInCents
-        self.v4FlashTotalTokens = v4FlashTotalTokens
-        self.v4FlashCostInCents = v4FlashCostInCents
+        self.proTotalTokens = proTotalTokens
+        self.proCostInCents = proCostInCents
         self.dailyUsage = dailyUsage
         self.balanceLastUpdated = balanceLastUpdated
         self.usageLastUpdated = usageLastUpdated
@@ -348,22 +351,57 @@ struct DashboardCache: Codable {
         currentMonthCost = try container.decodeIfPresent(Double.self, forKey: .currentMonthCost) ?? 0
         let storedFlashTokens = try container.decodeIfPresent(Int.self, forKey: .flashTotalTokens) ?? 0
         let storedFlashCost = try container.decodeIfPresent(Int.self, forKey: .flashCostInCents) ?? 0
-        if let storedV4FlashTokens = try container.decodeIfPresent(Int.self, forKey: .v4FlashTotalTokens),
-           let storedV4FlashCost = try container.decodeIfPresent(Int.self, forKey: .v4FlashCostInCents) {
+        let storedProTokens = try container.decodeIfPresent(Int.self, forKey: .proTotalTokens) ?? 0
+        let storedProCost = try container.decodeIfPresent(Int.self, forKey: .proCostInCents) ?? 0
+        let schemaVersion = try container.decodeIfPresent(Int.self, forKey: .modelSchemaVersion) ?? 0
+        if schemaVersion >= 2 {
             flashTotalTokens = storedFlashTokens
             flashCostInCents = storedFlashCost
-            v4FlashTotalTokens = storedV4FlashTokens
-            v4FlashCostInCents = storedV4FlashCost
-        } else {
-            // Old cache: flash was deepseek-chat and pro was Reasoner.
+            proTotalTokens = storedProTokens
+            proCostInCents = storedProCost
+        } else if container.contains(.legacyV4FlashTotalTokens) || container.contains(.legacyV4FlashCostInCents) {
+            // v1.6 caches used the second slot for retired V4 Flash.
+            flashTotalTokens = storedFlashTokens
+            flashCostInCents = storedFlashCost
+            proTotalTokens = 0
+            proCostInCents = 0
+        } else if container.contains(.proTotalTokens) || container.contains(.proCostInCents) {
+            // Pre-v1.6 caches used flash for deepseek-chat and pro for Reasoner.
             flashTotalTokens = 0
             flashCostInCents = 0
-            v4FlashTotalTokens = storedFlashTokens
-            v4FlashCostInCents = storedFlashCost
+            proTotalTokens = storedProTokens
+            proCostInCents = storedProCost
+        } else {
+            // Unknown legacy cache shape: do not relabel data into the new cards.
+            flashTotalTokens = 0
+            flashCostInCents = 0
+            proTotalTokens = 0
+            proCostInCents = 0
         }
         dailyUsage = try container.decode([String: Int].self, forKey: .dailyUsage)
         lastUpdated = try container.decode(Date.self, forKey: .lastUpdated)
         balanceLastUpdated = try container.decodeIfPresent(Date.self, forKey: .balanceLastUpdated) ?? lastUpdated
         usageLastUpdated = try container.decodeIfPresent(Date.self, forKey: .usageLastUpdated) ?? lastUpdated
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(isAccountAvailable, forKey: .isAccountAvailable)
+        try container.encode(totalBalance, forKey: .totalBalance)
+        try container.encode(grantedBalance, forKey: .grantedBalance)
+        try container.encode(toppedUpBalance, forKey: .toppedUpBalance)
+        try container.encode(balanceCurrencyCode, forKey: .balanceCurrencyCode)
+        try container.encode(usageCurrencyCode, forKey: .usageCurrencyCode)
+        try container.encode(currentDayCost, forKey: .currentDayCost)
+        try container.encode(currentMonthCost, forKey: .currentMonthCost)
+        try container.encode(flashTotalTokens, forKey: .flashTotalTokens)
+        try container.encode(flashCostInCents, forKey: .flashCostInCents)
+        try container.encode(proTotalTokens, forKey: .proTotalTokens)
+        try container.encode(proCostInCents, forKey: .proCostInCents)
+        try container.encode(2, forKey: .modelSchemaVersion)
+        try container.encode(dailyUsage, forKey: .dailyUsage)
+        try container.encodeIfPresent(balanceLastUpdated, forKey: .balanceLastUpdated)
+        try container.encodeIfPresent(usageLastUpdated, forKey: .usageLastUpdated)
+        try container.encode(lastUpdated, forKey: .lastUpdated)
     }
 }

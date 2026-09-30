@@ -70,14 +70,14 @@ final class DashboardViewModel: ObservableObject {
 
     /// V4.1 Flash 用量汇总
     @Published private(set) var flashUsage: ModelUsageSummary?
-    /// V4 Flash 用量汇总
-    @Published private(set) var v4FlashUsage: ModelUsageSummary?
+    /// V4 Pro 用量汇总
+    @Published private(set) var proUsage: ModelUsageSummary?
     /// 每日用量明细（用于趋势图）
     @Published private(set) var dailyUsage: [Date: Int] = [:]
     /// V4.1 Flash 按日明细
     @Published private(set) var flashDailyUsage: [ModelDailyUsagePoint] = []
-    /// V4 Flash 按日明细
-    @Published private(set) var v4FlashDailyUsage: [ModelDailyUsagePoint] = []
+    /// V4 Pro 按日明细
+    @Published private(set) var proDailyUsage: [ModelDailyUsagePoint] = []
 
     // MARK: - Published: 状态
 
@@ -392,10 +392,10 @@ final class DashboardViewModel: ObservableObject {
         currentDayCost = 0
         currentMonthCost = 0
         flashUsage = nil
-        v4FlashUsage = nil
+        proUsage = nil
         dailyUsage = [:]
         flashDailyUsage = []
-        v4FlashDailyUsage = []
+        proDailyUsage = []
         balanceLastUpdated = nil
         usageLastUpdated = nil
         errorMessage = nil
@@ -524,7 +524,7 @@ final class DashboardViewModel: ObservableObject {
 
     /// 总 Token 消耗（所有模型合计）
     var totalTokens: Int {
-        (flashUsage?.totalTokens ?? 0) + (v4FlashUsage?.totalTokens ?? 0)
+        (flashUsage?.totalTokens ?? 0) + (proUsage?.totalTokens ?? 0)
     }
 
     var usageTimeZone: TimeZone {
@@ -604,14 +604,14 @@ final class DashboardViewModel: ObservableObject {
     func summary(for model: DeepSeekModel) -> ModelUsageSummary? {
         switch model {
         case .flash: return flashUsage
-        case .v4Flash:   return v4FlashUsage
+        case .pro: return proUsage
         }
     }
 
     func dailyPoints(for model: DeepSeekModel) -> [ModelDailyUsagePoint] {
         switch model {
         case .flash: return flashDailyUsage
-        case .v4Flash:   return v4FlashDailyUsage
+        case .pro: return proDailyUsage
         }
     }
 
@@ -620,17 +620,17 @@ final class DashboardViewModel: ObservableObject {
     /// 按模型聚合用量
     private func aggregateUsage(_ records: [UsageRecord]) {
         let flashRecords = records.filter { normalizedModelName($0.modelName) == .flash }
-        let v4FlashRecords   = records.filter { normalizedModelName($0.modelName) == .v4Flash }
+        let proRecords = records.filter { normalizedModelName($0.modelName) == .pro }
 
         flashUsage = summary(for: flashRecords, model: .flash)
-        v4FlashUsage = summary(for: v4FlashRecords, model: .v4Flash)
+        proUsage = summary(for: proRecords, model: .pro)
     }
 
     /// 构建按日期的 Token 消耗字典
     private func buildDailyUsage(from records: [UsageRecord]) {
         var totalByDate: [Date: Int] = [:]
         var flashByDate: [Date: (tokens: Int, hit: Int, miss: Int, output: Int, requests: Int)] = [:]
-        var v4FlashByDate: [Date: (tokens: Int, hit: Int, miss: Int, output: Int, requests: Int)] = [:]
+        var proByDate: [Date: (tokens: Int, hit: Int, miss: Int, output: Int, requests: Int)] = [:]
 
         for record in records {
             guard let day = recordDay(from: record.date) else { continue }
@@ -645,15 +645,15 @@ final class DashboardViewModel: ObservableObject {
                 value.output += record.completionTokens
                 value.requests += record.requestCount
                 flashByDate[day] = value
-            case .v4Flash:
+            case .pro:
                 totalByDate[day, default: 0] += record.totalTokens
-                var value = v4FlashByDate[day] ?? (0, 0, 0, 0, 0)
+                var value = proByDate[day] ?? (0, 0, 0, 0, 0)
                 value.tokens += record.totalTokens
                 value.hit += record.inputCacheHitTokens
                 value.miss += record.inputCacheMissTokens
                 value.output += record.completionTokens
                 value.requests += record.requestCount
-                v4FlashByDate[day] = value
+                proByDate[day] = value
             case nil:
                 continue
             }
@@ -661,23 +661,22 @@ final class DashboardViewModel: ObservableObject {
 
         dailyUsage = totalByDate
         flashDailyUsage = buildModelDailyPoints(from: flashByDate)
-        v4FlashDailyUsage = buildModelDailyPoints(from: v4FlashByDate)
+        proDailyUsage = buildModelDailyPoints(from: proByDate)
     }
 
     private func clearUsageData() {
         flashUsage = nil
-        v4FlashUsage = nil
+        proUsage = nil
         dailyUsage = [:]
         flashDailyUsage = []
-        v4FlashDailyUsage = []
+        proDailyUsage = []
         currentMonthCost = 0
         currentDayCost = 0
     }
 
     private func applyUsageRecords(_ records: [UsageRecord]) {
-        // The Usage page currently exposes only the two allowlisted Flash
-        // identifiers. Keep unsupported/legacy model rows out of every
-        // dashboard aggregate, including the balance cost cards.
+        // Keep unsupported/future model rows out of every dashboard aggregate,
+        // including the balance cost cards.
         let supportedRecords = records.filter { normalizedModelName($0.modelName) != nil }
         let recentRange = UsageAutoImportService.expectedRecentExportRange(
             timeZone: usageTimeZone
@@ -759,10 +758,10 @@ final class DashboardViewModel: ObservableObject {
             costInCents: cached.flashCostInCents
         )
 
-        v4FlashUsage = cachedSummary(
-            model: .v4Flash,
-            totalTokens: cached.v4FlashTotalTokens,
-            costInCents: cached.v4FlashCostInCents
+        proUsage = cachedSummary(
+            model: .pro,
+            totalTokens: cached.proTotalTokens,
+            costInCents: cached.proCostInCents
         )
 
         // 恢复 Date-keyed 字典
@@ -797,8 +796,8 @@ final class DashboardViewModel: ObservableObject {
             currentMonthCost: currentMonthCost,
             flashTotalTokens: flashUsage?.totalTokens ?? 0,
             flashCostInCents: flashUsage?.costInCents ?? 0,
-            v4FlashTotalTokens: v4FlashUsage?.totalTokens ?? 0,
-            v4FlashCostInCents: v4FlashUsage?.costInCents ?? 0,
+            proTotalTokens: proUsage?.totalTokens ?? 0,
+            proCostInCents: proUsage?.costInCents ?? 0,
             dailyUsage: dailyUsageStrings,
             balanceLastUpdated: balanceLastUpdated,
             usageLastUpdated: usageLastUpdated,

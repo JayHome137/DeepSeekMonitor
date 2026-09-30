@@ -327,25 +327,25 @@ struct UsageRecord: Codable, Identifiable {
 
 // MARK: - 本地展示模型
 
-/// 官方 Usage 导出中的两类模型名称，不代表两个独立在役模型。
+/// 官方 Usage 导出中的两类展示模型。
 ///
-/// `from(rawName:)` 是唯一的模型归一化入口。它只接受当前模型名和明确列出的
-/// 历史别名，未知名称会被忽略，避免将未来模型错误地计入现有卡片。
+/// `from(rawName:)` 是唯一的模型归一化入口。历史 Flash 别名归入 Flash，
+/// Pro/Reasoner 别名归入 Pro，未知名称会被忽略。
 enum DeepSeekModel: String, CaseIterable {
     case flash = "deepseek-flash"
-    case v4Flash = "deepseek-v4-flash"
+    case pro = "deepseek-v4-pro"
 
     var displayName: String {
         switch self {
         case .flash: return "V4.1 Flash"
-        case .v4Flash: return "V4 Flash"
+        case .pro: return "V4 Pro"
         }
     }
 
     var statusLabel: String {
         switch self {
         case .flash: return "新模型"
-        case .v4Flash: return "旧名称"
+        case .pro: return "在售模型"
         }
     }
 
@@ -355,8 +355,8 @@ enum DeepSeekModel: String, CaseIterable {
         switch self {
         case .flash:
             return "当前 Flash 模型，推荐使用 deepseek-flash 调用。"
-        case .v4Flash:
-            return "原 V4 Flash 模型已下线。旧名称仍可调用，现由 V4.1 Flash 提供服务；此卡保留旧名称的用量统计。"
+        case .pro:
+            return "当前 Pro 模型；deepseek-v4-pro-0813 与 deepseek-reasoner 记录归入此卡。"
         }
     }
 
@@ -376,10 +376,9 @@ enum DeepSeekModel: String, CaseIterable {
         case "deepseek-flash":
             return .flash
         case "deepseek-v4-flash", "deepseek-v4-flash-vision-exp", "deepseek-chat":
-            return .v4Flash
+            return .flash
         case "deepseek-v4-pro", "deepseek-v4-pro-0813", "deepseek-reasoner":
-            // The old Pro/Reasoner family is intentionally not displayed.
-            return nil
+            return .pro
         default:
             return nil
         }
@@ -442,7 +441,7 @@ struct WidgetSnapshot: Codable {
     let currentDayCost: Double
     let currentMonthCost: Double
     let flashCostInCents: Int
-    let v4FlashCostInCents: Int
+    let proCostInCents: Int
     let usageUpdatedAt: Date
     let lastUpdated: Date
 
@@ -455,8 +454,9 @@ struct WidgetSnapshot: Codable {
         case currentDayCost
         case currentMonthCost
         case flashCostInCents
-        case v4FlashCostInCents
-        case legacyProCostInCents = "proCostInCents"
+        case proCostInCents
+        case legacyV4FlashCostInCents = "v4FlashCostInCents"
+        case modelSchemaVersion
         case usageUpdatedAt
         case lastUpdated
     }
@@ -470,7 +470,7 @@ struct WidgetSnapshot: Codable {
         currentDayCost: Double,
         currentMonthCost: Double,
         flashCostInCents: Int,
-        v4FlashCostInCents: Int,
+        proCostInCents: Int,
         usageUpdatedAt: Date,
         lastUpdated: Date
     ) {
@@ -482,7 +482,7 @@ struct WidgetSnapshot: Codable {
         self.currentDayCost = currentDayCost
         self.currentMonthCost = currentMonthCost
         self.flashCostInCents = flashCostInCents
-        self.v4FlashCostInCents = v4FlashCostInCents
+        self.proCostInCents = proCostInCents
         self.usageUpdatedAt = usageUpdatedAt
         self.lastUpdated = lastUpdated
     }
@@ -497,13 +497,19 @@ struct WidgetSnapshot: Codable {
         currentDayCost = try container.decode(Double.self, forKey: .currentDayCost)
         currentMonthCost = try container.decode(Double.self, forKey: .currentMonthCost)
         let storedFlash = try container.decodeIfPresent(Int.self, forKey: .flashCostInCents) ?? 0
-        if let storedV4Flash = try container.decodeIfPresent(Int.self, forKey: .v4FlashCostInCents) {
+        let storedPro = try container.decodeIfPresent(Int.self, forKey: .proCostInCents) ?? 0
+        let schemaVersion = try container.decodeIfPresent(Int.self, forKey: .modelSchemaVersion) ?? 0
+        if schemaVersion >= 2 {
             flashCostInCents = storedFlash
-            v4FlashCostInCents = storedV4Flash
+            proCostInCents = storedPro
+        } else if container.contains(.legacyV4FlashCostInCents) {
+            // v1.6 snapshots used the second slot for retired V4 Flash.
+            flashCostInCents = storedFlash
+            proCostInCents = 0
         } else {
-            // Old snapshots used flash for deepseek-chat and pro for Reasoner.
+            // Pre-v1.6 snapshots used flash for deepseek-chat and pro for Reasoner.
             flashCostInCents = 0
-            v4FlashCostInCents = storedFlash
+            proCostInCents = storedPro
         }
         usageUpdatedAt = try container.decodeIfPresent(Date.self, forKey: .usageUpdatedAt)
             ?? (try container.decode(Date.self, forKey: .lastUpdated))
@@ -520,7 +526,8 @@ struct WidgetSnapshot: Codable {
         try container.encode(currentDayCost, forKey: .currentDayCost)
         try container.encode(currentMonthCost, forKey: .currentMonthCost)
         try container.encode(flashCostInCents, forKey: .flashCostInCents)
-        try container.encode(v4FlashCostInCents, forKey: .v4FlashCostInCents)
+        try container.encode(proCostInCents, forKey: .proCostInCents)
+        try container.encode(2, forKey: .modelSchemaVersion)
         try container.encode(usageUpdatedAt, forKey: .usageUpdatedAt)
         try container.encode(lastUpdated, forKey: .lastUpdated)
     }

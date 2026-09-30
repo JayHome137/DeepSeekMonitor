@@ -11,7 +11,7 @@ struct WidgetSnapshot: Decodable {
     let currentDayCost: Double
     let currentMonthCost: Double
     let flashCostInCents: Int
-    let v4FlashCostInCents: Int
+    let proCostInCents: Int
     let usageUpdatedAt: Date
     let lastUpdated: Date
 
@@ -24,8 +24,9 @@ struct WidgetSnapshot: Decodable {
         case currentDayCost
         case currentMonthCost
         case flashCostInCents
-        case v4FlashCostInCents
-        case legacyProCostInCents = "proCostInCents"
+        case proCostInCents
+        case legacyV4FlashCostInCents = "v4FlashCostInCents"
+        case modelSchemaVersion
         case usageUpdatedAt
         case lastUpdated
     }
@@ -40,13 +41,19 @@ struct WidgetSnapshot: Decodable {
         currentDayCost = try container.decode(Double.self, forKey: .currentDayCost)
         currentMonthCost = try container.decode(Double.self, forKey: .currentMonthCost)
         let storedFlash = try container.decodeIfPresent(Int.self, forKey: .flashCostInCents) ?? 0
-        if let storedV4Flash = try container.decodeIfPresent(Int.self, forKey: .v4FlashCostInCents) {
+        let storedPro = try container.decodeIfPresent(Int.self, forKey: .proCostInCents) ?? 0
+        let schemaVersion = try container.decodeIfPresent(Int.self, forKey: .modelSchemaVersion) ?? 0
+        if schemaVersion >= 2 {
             flashCostInCents = storedFlash
-            v4FlashCostInCents = storedV4Flash
+            proCostInCents = storedPro
+        } else if container.contains(.legacyV4FlashCostInCents) {
+            // v1.6 snapshots used the second slot for retired V4 Flash.
+            flashCostInCents = storedFlash
+            proCostInCents = 0
         } else {
-            // Previous snapshots used flash for deepseek-chat and pro for Reasoner.
+            // Pre-v1.6 snapshots used flash for deepseek-chat and pro for Reasoner.
             flashCostInCents = 0
-            v4FlashCostInCents = storedFlash
+            proCostInCents = storedPro
         }
         lastUpdated = try container.decode(Date.self, forKey: .lastUpdated)
         usageUpdatedAt = try container.decodeIfPresent(Date.self, forKey: .usageUpdatedAt) ?? lastUpdated
@@ -65,7 +72,7 @@ struct WidgetEntry: TimelineEntry {
     let dayCost: Double
     let monthCost: Double
     let flashCostCents: Int
-    let v4FlashCostCents: Int
+    let proCostCents: Int
     let usageUpdatedAt: Date
     let hasData: Bool
 
@@ -79,7 +86,7 @@ struct WidgetEntry: TimelineEntry {
         dayCost: 0,
         monthCost: 0,
         flashCostCents: 0,
-        v4FlashCostCents: 0,
+        proCostCents: 0,
         usageUpdatedAt: Date(),
         hasData: false
     )
@@ -137,7 +144,7 @@ struct Provider: TimelineProvider {
                 dayCost: 0,
                 monthCost: 0,
                 flashCostCents: 0,
-                v4FlashCostCents: 0,
+                proCostCents: 0,
                 usageUpdatedAt: Date(),
                 hasData: false
             )
@@ -156,7 +163,7 @@ struct Provider: TimelineProvider {
             dayCost: s.currentDayCost,
             monthCost: s.currentMonthCost,
             flashCostCents: s.flashCostInCents,
-            v4FlashCostCents: s.v4FlashCostInCents,
+            proCostCents: s.proCostInCents,
             usageUpdatedAt: s.usageUpdatedAt,
             hasData: true
         )

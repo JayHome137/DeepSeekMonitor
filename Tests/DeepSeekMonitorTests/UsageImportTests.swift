@@ -66,7 +66,7 @@ final class UsageImportTests: XCTestCase {
 
         XCTAssertFalse(result.fileNameEndDateIsInclusive)
         XCTAssertEqual(record.date, "2026-07-25")
-        XCTAssertEqual(record.modelName, "deepseek-v4-flash")
+        XCTAssertEqual(record.modelName, "deepseek-flash")
         XCTAssertEqual(record.totalTokens, 1_700)
         XCTAssertEqual(record.inputCacheHitTokens, 1_000)
         XCTAssertEqual(record.inputCacheMissTokens, 500)
@@ -139,14 +139,13 @@ final class UsageImportTests: XCTestCase {
 
         let records = try UsageCSVImporter.importRecords(from: amountURL, costURL: costURL)
 
-        XCTAssertEqual(Set(records.map(\.modelName)), ["deepseek-flash", "deepseek-v4-flash"])
+        XCTAssertEqual(Set(records.map(\.modelName)), ["deepseek-flash", "deepseek-v4-pro"])
         XCTAssertEqual(records.count, 2)
-        XCTAssertEqual(records.first(where: { $0.modelName == "deepseek-flash" })?.totalTokens, 100)
-        XCTAssertEqual(records.first(where: { $0.modelName == "deepseek-v4-flash" })?.totalTokens, 200)
-        XCTAssertEqual(records.first(where: { $0.modelName == "deepseek-flash" })?.requestCount, 2)
-        XCTAssertEqual(records.first(where: { $0.modelName == "deepseek-v4-flash" })?.requestCount, 3)
-        XCTAssertEqual(records.first(where: { $0.modelName == "deepseek-flash" })?.costAmount(for: "CNY"), decimal("0.12"))
-        XCTAssertEqual(records.first(where: { $0.modelName == "deepseek-v4-flash" })?.costAmount(for: "CNY"), decimal("0.34"))
+        XCTAssertEqual(records.first(where: { $0.modelName == "deepseek-flash" })?.totalTokens, 300)
+        XCTAssertEqual(records.first(where: { $0.modelName == "deepseek-flash" })?.requestCount, 5)
+        XCTAssertEqual(records.first(where: { $0.modelName == "deepseek-flash" })?.costAmount(for: "CNY"), decimal("0.46"))
+        XCTAssertEqual(records.first(where: { $0.modelName == "deepseek-v4-pro" })?.totalTokens, 999)
+        XCTAssertEqual(records.first(where: { $0.modelName == "deepseek-v4-pro" })?.costAmount(for: "CNY"), decimal("9.99"))
     }
 
     func testISOExportKeepsCalendarDateForUTCAndPositiveOffsets() throws {

@@ -146,19 +146,19 @@ private struct BrandGlyph: View {
 
 private enum ModelBadgeKind {
     case flash
-    case v4Flash
+    case pro
 
     var displayName: String {
         switch self {
         case .flash: return "V4.1 Flash"
-        case .v4Flash: return "V4 Flash"
+        case .pro: return "V4 Pro"
         }
     }
 
     var statusLabel: String {
         switch self {
         case .flash: return "新模型 · deepseek-flash"
-        case .v4Flash: return "旧名称 · deepseek-v4-flash"
+        case .pro: return "在售模型 · deepseek-v4-pro"
         }
     }
 
@@ -166,7 +166,7 @@ private enum ModelBadgeKind {
         switch self {
         case .flash:
             Color(red: 0.10, green: 0.22, blue: 0.24)
-        case .v4Flash:
+        case .pro:
             Color(red: 0.22, green: 0.16, blue: 0.30)
         }
     }
@@ -175,7 +175,7 @@ private enum ModelBadgeKind {
         switch self {
         case .flash:
             Color(red: 0.25, green: 0.56, blue: 1.0)
-        case .v4Flash:
+        case .pro:
             Color(red: 0.94, green: 0.18, blue: 1.0)
         }
     }
@@ -184,7 +184,7 @@ private enum ModelBadgeKind {
         switch self {
         case .flash:
             "bolt.fill"
-        case .v4Flash:
+        case .pro:
             "bolt.horizontal.fill"
         }
     }
@@ -499,9 +499,9 @@ private struct MediumWidgetView: View {
 
             ModelCostRow(
                 entry: entry,
-                kind: .v4Flash,
-                costCents: entry.v4FlashCostCents,
-                url: "deepseekmonitor://v4-flash",
+                kind: .pro,
+                costCents: entry.proCostCents,
+                url: "deepseekmonitor://pro",
                 height: 38
             )
 
@@ -544,6 +544,7 @@ private func localTime(_ date: Date) -> String {
 
 // MARK: - Preview
 
+#if !SWIFT_PACKAGE
 #Preview(as: .systemMedium) {
     DeepSeekWidget()
 } timeline: {
@@ -558,8 +559,9 @@ private func localTime(_ date: Date) -> String {
         dayCost: 12.34,
         monthCost: 98.76,
         flashCostCents: 560,
-        v4FlashCostCents: 1230,
+        proCostCents: 1230,
         usageUpdatedAt: Date(),
         hasData: true
     )
 }
+#endif

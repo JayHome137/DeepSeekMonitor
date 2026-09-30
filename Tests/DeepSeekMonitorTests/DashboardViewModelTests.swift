@@ -83,7 +83,7 @@ final class DashboardViewModelTests: XCTestCase {
     }
 
     @MainActor
-    func testUnsupportedModelsDoNotEnterDashboardAggregates() async throws {
+    func testSupportedFlashAndProAliasesEnterDashboardAggregates() async throws {
         let environment = try makeEnvironment()
         defer { environment.cleanup() }
 
@@ -121,9 +121,9 @@ final class DashboardViewModelTests: XCTestCase {
         await viewModel.refresh()
 
         XCTAssertEqual(viewModel.flashUsage?.totalTokens, 10)
-        XCTAssertNil(viewModel.v4FlashUsage)
-        XCTAssertEqual(viewModel.totalTokens, 10)
-        XCTAssertEqual(viewModel.currentMonthCost, 1, accuracy: 0.0001)
+        XCTAssertEqual(viewModel.proUsage?.totalTokens, 900)
+        XCTAssertEqual(viewModel.totalTokens, 910)
+        XCTAssertEqual(viewModel.currentMonthCost, 10, accuracy: 0.0001)
     }
 
     @MainActor
@@ -277,8 +277,8 @@ final class DashboardViewModelTests: XCTestCase {
             currentMonthCost: 10,
             flashTotalTokens: 100,
             flashCostInCents: 10,
-            v4FlashTotalTokens: 200,
-            v4FlashCostInCents: 20,
+            proTotalTokens: 200,
+            proCostInCents: 20,
             dailyUsage: ["2026-08-14": 300],
             balanceLastUpdated: Date(),
             usageLastUpdated: Date(),

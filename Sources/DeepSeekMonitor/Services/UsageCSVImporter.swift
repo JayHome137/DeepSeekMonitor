@@ -742,8 +742,8 @@ enum UsageCSVImporter {
 
     private static func normalizedModel(from raw: String) -> String? {
         // Delegate the exact allowlist to the shared model normalization helper.
-        // It accepts current identifiers and explicit historical Flash aliases,
-        // while rejecting Pro/Reasoner and unknown/future models.
+        // It accepts current identifiers and explicit historical aliases while
+        // rejecting unknown/future models.
         DeepSeekModel.canonicalName(for: raw)
     }
 

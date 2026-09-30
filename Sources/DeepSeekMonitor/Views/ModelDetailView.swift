@@ -145,14 +145,14 @@ struct ModelDetailView: View {
     private var tint: Color {
         switch model {
         case .flash: return Theme.flash
-        case .v4Flash: return Theme.v4Flash
+        case .pro: return Theme.pro
         }
     }
 
     private var gradient: LinearGradient {
         switch model {
         case .flash: return Theme.flashGradient
-        case .v4Flash: return Theme.v4FlashGradient
+        case .pro: return Theme.proGradient
         }
     }
 
