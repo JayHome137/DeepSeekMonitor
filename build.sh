@@ -47,6 +47,7 @@ increment_build() {
 
 create_dmg() {
     local app_bundle="${1:-${PROJECT_NAME}.app}"
+    local app_name
     local dmg_name="${PROJECT_NAME}-v${MARKETING_VERSION}"
     local dmg_temp="${dmg_name}-temp.dmg"
     local dmg_final="${dmg_name}.dmg"
@@ -56,11 +57,12 @@ create_dmg() {
         error "未找到 ${app_bundle}，无法生成 DMG"
         exit 1
     fi
+    app_name=$(basename "$app_bundle")
 
     rm -f "$dmg_temp" "$dmg_final"
     rm -rf "$staging"
     mkdir -p "$staging"
-    ditto "$app_bundle" "$staging/$app_bundle"
+    ditto "$app_bundle" "$staging/$app_name"
     ln -s /Applications "$staging/Applications"
 
     hdiutil create \
