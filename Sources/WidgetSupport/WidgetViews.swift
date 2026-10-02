@@ -185,7 +185,7 @@ private enum ModelBadgeKind {
         case .flash:
             "bolt.fill"
         case .pro:
-            "bolt.horizontal.fill"
+            "bolt.fill"
         }
     }
 }

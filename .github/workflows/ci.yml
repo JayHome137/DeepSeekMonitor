@@ -84,3 +84,16 @@ jobs:
               .PixelHeight == 36
             )
           ' >/dev/null
+
+      - name: Archive remote app and widget build
+        if: github.event_name != 'pull_request'
+        run: ditto -c -k --sequesterRsrc --keepParent .build/ci-derived/Build/Products/Release/DeepSeekMonitor.app .build/DeepSeekMonitor-remote-build.zip
+
+      - name: Upload remote app and widget build
+        if: github.event_name != 'pull_request'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: DeepSeekMonitor-remote-build
+          path: .build/DeepSeekMonitor-remote-build.zip
+          if-no-files-found: error
+          retention-days: 7

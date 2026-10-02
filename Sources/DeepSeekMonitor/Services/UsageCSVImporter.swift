@@ -518,7 +518,6 @@ enum UsageCSVImporter {
         let instant: Date
         let localDate: String
         let timeZoneSecondsFromGMT: Int
-        let isMidnight: Bool
     }
 
     private static func dateBucket(
@@ -541,16 +540,13 @@ enum UsageCSVImporter {
         case .interval(let startIndex, let endIndex):
             let startText = value(at: startIndex, in: row)
             let endText = value(at: endIndex, in: row)
-            let minimumDayDuration: TimeInterval = 20 * 60 * 60
-            let maximumDayDuration: TimeInterval = 28 * 60 * 60
+            let maximumIntervalDuration: TimeInterval = 28 * 60 * 60
             guard let start = parseISOEndpoint(startText),
                   let end = parseISOEndpoint(endText),
-                  start.isMidnight,
-                  end.isMidnight,
                   end.instant > start.instant,
-                  end.instant.timeIntervalSince(start.instant) >= minimumDayDuration,
-                  end.instant.timeIntervalSince(start.instant) <= maximumDayDuration,
-                  nextCalendarDate(after: start.localDate) == end.localDate else {
+                  end.instant.timeIntervalSince(start.instant) <= maximumIntervalDuration,
+                  end.localDate == start.localDate ||
+                    nextCalendarDate(after: start.localDate) == end.localDate else {
                 throw UsageCSVImportError.detailed(
                     "\(csvKind) CSV 第 \(rowNumber) 行的时间区间无效"
                 )
@@ -573,7 +569,6 @@ enum UsageCSVImporter {
                 range: NSRange(text.startIndex..<text.endIndex, in: text)
               ),
               let dateText = capture(1, from: match, in: text),
-              let timeText = capture(2, from: match, in: text),
               let zoneText = capture(4, from: match, in: text),
               let timeZoneSecondsFromGMT = parseTimeZoneOffset(zoneText),
               let timeZone = TimeZone(secondsFromGMT: timeZoneSecondsFromGMT),
@@ -587,12 +582,10 @@ enum UsageCSVImporter {
             : [.withInternetDateTime, .withFractionalSeconds]
         guard let instant = formatter.date(from: text.uppercased()) else { return nil }
 
-        let fractional = capture(3, from: match, in: text) ?? ""
         return ISOEndpoint(
             instant: instant,
             localDate: dateText,
-            timeZoneSecondsFromGMT: timeZoneSecondsFromGMT,
-            isMidnight: timeText == "00:00:00" && fractional.allSatisfy { $0 == "0" }
+            timeZoneSecondsFromGMT: timeZoneSecondsFromGMT
         )
     }
 

@@ -84,6 +84,10 @@ swift test
 ```
 
 - `swift test` runs the package tests without creating release artifacts.
+- A push to `main` runs tests and the universal unsigned App/Widget build on
+  GitHub Actions; CI retains the remote build artifact for 7 days.
+- `./build.sh package-remote <DeepSeekMonitor.app>` signs and packages that
+  downloaded CI artifact without compiling or incrementing the build number.
 - `./build.sh run` increments the build number, creates a stable development-signed
   Xcode Debug app, verifies its Team ID, and opens it.
 - `./build.sh release` increments the build number, builds the universal app and
@@ -120,6 +124,9 @@ xcodebuild \
   pairing.
 - Before publishing, confirm the app, widget, `build.sh`, DMG name, and appcast all
   describe the same marketing version and build number.
+- For remote builds, package only the App/Widget artifact produced by the passing
+  GitHub Actions run for the release commit; sign it locally so the Sparkle private
+  key remains in the maintainer's login Keychain.
 - The appcast may retain earlier published versions, but it must not contain an
   unpublished build. Its enclosure URL, byte length, and Ed25519 signature must
   match the uploaded DMG.
@@ -175,6 +182,14 @@ UserDefaults, widget snapshots, diagnostics, test fixtures, or release notes.
 - Automatic sync accepts only official current-month ZIP exports. Manual import is
   the fallback for official month, recent-range, and historical ZIP/CSV files.
 - Amount and cost files must describe compatible ranges and time-zone semantics.
+- ISO interval rows may cover up to 28 hours, including hourly rows; each row is
+  grouped by its start date.
+- Failed automatic ZIP/CSV imports retain at most the 20 newest regular files.
+  Older failed files are removed when the app starts or another failed file is
+  quarantined; Settings describes this retention limit.
+- Balance refresh may be set as low as 5 seconds and automatic export as low as
+  1 minute. Existing defaults remain 60 seconds and 5 minutes. Automatic export
+  failures back off up to 30 minutes; a successful import resets the delay.
 
 ### Software updates
 

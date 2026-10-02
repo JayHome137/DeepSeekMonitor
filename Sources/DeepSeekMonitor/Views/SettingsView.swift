@@ -27,6 +27,8 @@ struct SettingsView: View {
 
     // 刷新间隔选项
     private let intervalOptions: [(label: String, value: TimeInterval)] = [
+        ("5 秒", 5),
+        ("10 秒", 10),
         ("30 秒", 30),
         ("60 秒", 60),
         ("2 分钟", 120),
@@ -40,6 +42,8 @@ struct SettingsView: View {
     ]
 
     private let exportIntervalOptions: [(label: String, value: TimeInterval)] = [
+        ("1 分钟", 60),
+        ("2 分钟", 120),
         ("5 分钟", 300),
         ("10 分钟", 600),
         ("半小时", 1800),
@@ -390,7 +394,7 @@ struct SettingsView: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
 
-            HStack(spacing: 8) {
+            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: 3), alignment: .leading, spacing: 8) {
                 ForEach(intervalOptions, id: \.value) { option in
                     intervalButton(option: option)
                 }
@@ -480,7 +484,7 @@ struct SettingsView: View {
 
             DisclosureGroup("故障排查") {
                 VStack(alignment: .leading, spacing: 8) {
-                    Text("自动导入失败的文件会保留在 failed 子目录，不会被直接删除。")
+                    Text("自动导入失败的 ZIP/CSV 会保留在 failed 子目录，最多保留最近 \(UsageAutoImportService.maximumFailedImportFileCount) 份；超出时移除最早文件。")
                         .font(.caption2)
                         .foregroundStyle(.tertiary)
 
@@ -532,7 +536,7 @@ struct SettingsView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
 
-                HStack(spacing: 8) {
+                LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: 3), alignment: .leading, spacing: 8) {
                     ForEach(exportIntervalOptions, id: \.value) { option in
                         exportIntervalButton(option: option)
                     }

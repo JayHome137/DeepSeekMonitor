@@ -150,6 +150,21 @@ final class DashboardViewModelTests: XCTestCase {
     }
 
     @MainActor
+    func testFiveSecondBalanceRefreshIntervalIsAccepted() throws {
+        let environment = try makeEnvironment()
+        defer { environment.cleanup() }
+
+        environment.preferences.set(5, forKey: "balance_refresh_interval_seconds")
+        let viewModel = DashboardViewModel(
+            service: MockDeepSeekService(),
+            cache: environment.cache,
+            preferences: environment.preferences
+        )
+
+        XCTAssertEqual(viewModel.refreshInterval, 5)
+    }
+
+    @MainActor
     func testClearCacheRemovesWidgetSnapshotButKeepsKeyAndSettings() throws {
         let environment = try makeEnvironment(includeSharedDefaults: true)
         defer { environment.cleanup() }
@@ -230,6 +245,33 @@ final class DashboardViewModelTests: XCTestCase {
         XCTAssertTrue(FileManager.default.fileExists(atPath: destination.path))
         XCTAssertEqual(destination.deletingLastPathComponent().standardizedFileURL, failed.standardizedFileURL)
         XCTAssertEqual(try Data(contentsOf: destination), Data("invalid archive".utf8))
+    }
+
+    func testFailedImportArchiveKeepsNewestFilesWithinLimit() throws {
+        let directory = try makeTemporaryDirectory()
+        let failed = directory.appendingPathComponent("failed", isDirectory: true)
+        try FileManager.default.createDirectory(at: failed, withIntermediateDirectories: true)
+        let files = ["oldest.zip", "middle.csv", "newest.zip", "keep.txt"]
+
+        for (index, name) in files.enumerated() {
+            let url = failed.appendingPathComponent(name)
+            try Data(name.utf8).write(to: url)
+            try FileManager.default.setAttributes(
+                [.modificationDate: Date(timeIntervalSince1970: TimeInterval(index + 1))],
+                ofItemAtPath: url.path
+            )
+        }
+
+        let removed = try UsageAutoImportService.trimFailedImports(
+            maximumCount: 2,
+            failedFolder: failed
+        )
+
+        XCTAssertEqual(removed, 1)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: failed.appendingPathComponent("oldest.zip").path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: failed.appendingPathComponent("middle.csv").path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: failed.appendingPathComponent("newest.zip").path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: failed.appendingPathComponent("keep.txt").path))
     }
 
     private func makeEnvironment(includeSharedDefaults: Bool = false) throws -> TestEnvironment {

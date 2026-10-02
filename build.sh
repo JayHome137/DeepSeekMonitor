@@ -18,7 +18,7 @@ WIDGET_APPEX="WidgetSupport.appex"
 APP_BUNDLE_ID="com.deepseek.monitor"
 WIDGET_BUNDLE_ID="com.deepseek.monitor.widget"
 TEAM_ID="N5YV5FV235"
-MARKETING_VERSION="1.6.1"
+MARKETING_VERSION="1.6.2"
 GITHUB_REPOSITORY="JayHome137/DeepSeekMonitor"
 SPARKLE_KEY_ACCOUNT="com.deepseek.monitor"
 APPCAST_FILE="appcast.xml"
@@ -46,7 +46,7 @@ increment_build() {
 }
 
 create_dmg() {
-    local app_bundle="${PROJECT_NAME}.app"
+    local app_bundle="${1:-${PROJECT_NAME}.app}"
     local dmg_name="${PROJECT_NAME}-v${MARKETING_VERSION}"
     local dmg_temp="${dmg_name}-temp.dmg"
     local dmg_final="${dmg_name}.dmg"
@@ -630,6 +630,40 @@ fi
 MODE="${1:-release}"
 
 case "$MODE" in
+    package-remote)
+        REMOTE_APP="${2:-}"
+        if [ -z "$REMOTE_APP" ] || [ ! -d "$REMOTE_APP" ]; then
+            error "用法: ./build.sh package-remote <远端 CI 编译的 DeepSeekMonitor.app 路径>"
+            exit 1
+        fi
+
+        APP_BUNDLE="${PROJECT_NAME}.app"
+        REMOTE_WIDGET="${REMOTE_APP}/Contents/PlugIns/${WIDGET_APPEX}"
+        REMOTE_APP_VERSION=$(/usr/libexec/PlistBuddy -c "Print CFBundleShortVersionString" "${REMOTE_APP}/Contents/Info.plist")
+        REMOTE_APP_BUILD=$(/usr/libexec/PlistBuddy -c "Print CFBundleVersion" "${REMOTE_APP}/Contents/Info.plist")
+        REMOTE_WIDGET_VERSION=$(/usr/libexec/PlistBuddy -c "Print CFBundleShortVersionString" "${REMOTE_WIDGET}/Contents/Info.plist")
+        REMOTE_WIDGET_BUILD=$(/usr/libexec/PlistBuddy -c "Print CFBundleVersion" "${REMOTE_WIDGET}/Contents/Info.plist")
+        SOURCE_BUILD=$(/usr/libexec/PlistBuddy -c "Print CFBundleVersion" "Resources/Info.plist")
+        if [ "$REMOTE_APP_VERSION" != "$MARKETING_VERSION" ] || \
+           [ "$REMOTE_WIDGET_VERSION" != "$MARKETING_VERSION" ] || \
+           [ "$REMOTE_APP_BUILD" != "$SOURCE_BUILD" ] || \
+           [ "$REMOTE_WIDGET_BUILD" != "$SOURCE_BUILD" ]; then
+            error "远端 App/Widget 产物版本与当前源码不匹配"
+            exit 1
+        fi
+
+        REMOTE_PACKAGE_DIR=$(mktemp -d "${TMPDIR:-/tmp}/${PROJECT_NAME}-remote-release.XXXXXX")
+        trap 'rm -rf "$REMOTE_PACKAGE_DIR"' EXIT
+        APP_BUNDLE="${REMOTE_PACKAGE_DIR}/${PROJECT_NAME}.app"
+        ditto "$REMOTE_APP" "$APP_BUNDLE"
+        sign_bundle "$APP_BUNDLE"
+        codesign --verify --deep --strict --verbose=2 "$APP_BUNDLE"
+        lipo -info "${APP_BUNDLE}/Contents/MacOS/${PROJECT_NAME}"
+        lipo -info "${APP_BUNDLE}/Contents/PlugIns/${WIDGET_APPEX}/Contents/MacOS/${WIDGET_NAME}"
+        create_dmg "$APP_BUNDLE"
+        info "远端编译产物已签名并封装: ${PROJECT_NAME}-v${MARKETING_VERSION}.dmg"
+        ;;
+
     debug)
         increment_build
         info "Debug 构建..."
@@ -743,7 +777,7 @@ case "$MODE" in
         ;;
 
     *)
-        echo "用法: $0 {debug|release|appcast|signed-release|run|icon|restart|dmg}"
+        echo "用法: $0 {debug|release|package-remote|appcast|signed-release|run|icon|restart|dmg}"
         exit 1
         ;;
 esac

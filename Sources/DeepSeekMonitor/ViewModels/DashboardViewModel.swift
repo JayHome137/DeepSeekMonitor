@@ -173,6 +173,10 @@ final class DashboardViewModel: ObservableObject {
                     cachedRecords.allSatisfy({ $0.requestCount == 0 }) {
             UsageAutoImportService.resetRememberedImport(defaults: preferences)
         }
+        let removedFailedImports = (try? UsageAutoImportService.trimFailedImports()) ?? 0
+        if removedFailedImports > 0 {
+            UsageExportAutomationService.shared.reportFailedImportArchiveTrimmed(count: removedFailedImports)
+        }
         loadCachedData()
     }
 
@@ -259,7 +263,7 @@ final class DashboardViewModel: ObservableObject {
     }
 
     private static func normalizedRefreshInterval(_ value: TimeInterval) -> TimeInterval {
-        let allowed: [TimeInterval] = [30, 60, 120, 300]
+        let allowed: [TimeInterval] = [5, 10, 30, 60, 120, 300]
         return allowed.contains(value) ? value : 60
     }
 
@@ -432,10 +436,15 @@ final class DashboardViewModel: ObservableObject {
         } catch {
             let sourceName = candidate?.sourceName ?? event.fileURL.lastPathComponent
             let retainedFile = try? UsageAutoImportService.quarantineFailedImport(event.fileURL)
-            let retainedSuffix = retainedFile == nil ? "" : "，文件已保留到 failed 目录"
+            let retainedSuffix = retainedFile == nil
+                ? ""
+                : "，failed 目录最多保留最近 \(UsageAutoImportService.maximumFailedImportFileCount) 份"
             let message = "自动导入 \(sourceName) 失败：\(error.localizedDescription)\(retainedSuffix)"
             usageDataState = .failure(message)
-            UsageExportAutomationService.shared.reportImportFailure(error.localizedDescription)
+            UsageExportAutomationService.shared.reportImportFailure(
+                error.localizedDescription,
+                isAutomatic: event.isManual == false
+            )
             return .failure(message)
         }
     }
@@ -509,7 +518,9 @@ final class DashboardViewModel: ObservableObject {
             if let candidate = activeCandidate {
                 let selectedNames = candidate.selectedCSVNames.joined(separator: " + ")
                 let retainedFile = try? UsageAutoImportService.quarantineFailedImport(candidate.sourceURL)
-                let retainedSuffix = retainedFile == nil ? "" : "，文件已保留到 failed 目录"
+                let retainedSuffix = retainedFile == nil
+                    ? ""
+                    : "，failed 目录最多保留最近 \(UsageAutoImportService.maximumFailedImportFileCount) 份"
                 message = "自动导入 \(candidate.sourceName) -> \(selectedNames) 失败：\(error.localizedDescription)\(retainedSuffix)"
             } else {
                 message = "自动导入用量失败：\(error.localizedDescription)"

@@ -110,6 +110,40 @@ final class UsageImportTests: XCTestCase {
         XCTAssertEqual(record.costAmount(for: "CNY"), decimal("1.2345"))
     }
 
+    func testHourlyISOIntervalsAggregateIntoTheirStartCalendarDay() throws {
+        let directory = try makeTemporaryDirectory()
+        let amountURL = try write(
+            """
+            user_id,start_time_iso,end_time_iso,model,api_key_name,api_key,type,price,amount
+            account,2026-10-01T20:00:00+08:00,2026-10-01T21:00:00+08:00,deepseek-flash,test,masked,output_tokens,0.000004,10
+            account,2026-10-01T21:00:00+08:00,2026-10-01T22:00:00+08:00,deepseek-flash,test,masked,input_cache_hit_tokens,0.00000002,20
+            account,2026-10-01T23:00:00+08:00,2026-10-02T00:00:00+08:00,deepseek-flash,test,masked,request_count,0,2
+            """,
+            named: "amount-2026-10-01_2026-10-01.csv",
+            in: directory
+        )
+        let costURL = try write(
+            """
+            user_id,start_time_iso,end_time_iso,model,wallet_type,cost,currency
+            account,2026-10-01T20:00:00+08:00,2026-10-01T21:00:00+08:00,deepseek-flash,paid,0.25,CNY
+            account,2026-10-01T21:00:00+08:00,2026-10-01T22:00:00+08:00,deepseek-flash,paid,0.50,CNY
+            """,
+            named: "cost-2026-10-01_2026-10-01.csv",
+            in: directory
+        )
+
+        let result = try UsageCSVImporter.importResult(from: amountURL, costURL: costURL)
+        let record = try XCTUnwrap(result.records.first)
+
+        XCTAssertEqual(result.records.count, 1)
+        XCTAssertEqual(record.date, "2026-10-01")
+        XCTAssertEqual(record.totalTokens, 30)
+        XCTAssertEqual(record.completionTokens, 10)
+        XCTAssertEqual(record.inputCacheHitTokens, 20)
+        XCTAssertEqual(record.requestCount, 2)
+        XCTAssertEqual(record.costAmount(for: "CNY"), decimal("0.75"))
+    }
+
     func testCurrentUsageModelsImportTogetherAndUnknownModelsAreIgnored() throws {
         let directory = try makeTemporaryDirectory()
         let amountURL = try write(

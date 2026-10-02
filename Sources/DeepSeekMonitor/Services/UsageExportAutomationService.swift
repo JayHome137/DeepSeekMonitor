@@ -10,6 +10,14 @@ struct UsageExportDownloadEvent {
     let taskID: UUID
     let fileURL: URL
     let referenceDate: Date
+    let isManual: Bool
+
+    init(taskID: UUID, fileURL: URL, referenceDate: Date, isManual: Bool = false) {
+        self.taskID = taskID
+        self.fileURL = fileURL
+        self.referenceDate = referenceDate
+        self.isManual = isManual
+    }
 }
 
 private enum UsageExportScriptMessage {
@@ -27,6 +35,7 @@ private enum UsageExportAutomationState {
 private struct UsageExportTask {
     let id: UUID
     let referenceDate: Date
+    let isManual: Bool
 }
 
 @MainActor
@@ -89,6 +98,8 @@ final class UsageExportAutomationService: NSObject, ObservableObject {
     private var exportTriggeredAt: Date?
     private var downloadWatchAttempts = 0
     private var activeExportTask: UsageExportTask?
+    private var consecutiveAutomaticFailures = 0
+    private var nextAutomaticAttemptAt: Date?
 
     private override init() {
         let enabled = UserDefaults.standard.bool(forKey: Self.enabledKey)
@@ -140,17 +151,29 @@ final class UsageExportAutomationService: NSObject, ObservableObject {
     }
 
     func reportImportSuccess(fileNames: [String]) {
+        consecutiveAutomaticFailures = 0
+        nextAutomaticAttemptAt = nil
         statusMessage = "已导入 \(fileNames.joined(separator: " + ")) · 官方导出时区"
     }
 
-    func reportImportFailure(_ message: String) {
-        statusMessage = "下载完成但导入失败：\(message)"
+    func reportImportFailure(_ message: String, isAutomatic: Bool = true) {
+        let failureMessage = "下载完成但导入失败：\(message)"
+        statusMessage = isAutomatic ? automaticFailureStatus(failureMessage) : failureMessage
+    }
+
+    func reportFailedImportArchiveTrimmed(count: Int) {
+        statusMessage = "failed 目录已按保留上限清理最早的 \(count) 个文件"
     }
 
     private func handleTimerTick() {
         guard isEnabled else { return }
         guard window?.isVisible != true else {
             statusMessage = "登录窗口打开中，本次后台导出已暂缓"
+            return
+        }
+        if let nextAutomaticAttemptAt, Date() < nextAutomaticAttemptAt {
+            let minutes = max(1, Int(ceil(nextAutomaticAttemptAt.timeIntervalSinceNow / 60)))
+            statusMessage = "自动同步失败，已退避；约 \(minutes) 分钟后重试"
             return
         }
         requestExport(manual: false)
@@ -162,7 +185,7 @@ final class UsageExportAutomationService: NSObject, ObservableObject {
     }
 
     private static func normalizedInterval(_ value: TimeInterval) -> TimeInterval {
-        let allowed: [TimeInterval] = [300, 600, 1800]
+        let allowed: [TimeInterval] = [60, 120, 300, 600, 1800]
         return allowed.contains(value) ? value : defaultAutoExportInterval
     }
 
@@ -190,7 +213,8 @@ final class UsageExportAutomationService: NSObject, ObservableObject {
         exportLookupRetryCount = 0
         activeExportTask = UsageExportTask(
             id: UUID(),
-            referenceDate: Date()
+            referenceDate: Date(),
+            isManual: manual
         )
 
         let webView = ensureWebView()
@@ -696,8 +720,17 @@ final class UsageExportAutomationService: NSObject, ObservableObject {
     }
 
     private func finishAutomationFailure(_ message: String) {
+        let shouldBackOff = activeExportTask?.isManual == false
         resetAutomationState()
-        statusMessage = message
+        statusMessage = shouldBackOff ? automaticFailureStatus(message) : message
+    }
+
+    private func automaticFailureStatus(_ message: String) -> String {
+        let delays: [TimeInterval] = [120, 300, 900, 1_800]
+        let delay = delays[min(consecutiveAutomaticFailures, delays.count - 1)]
+        consecutiveAutomaticFailures += 1
+        nextAutomaticAttemptAt = Date().addingTimeInterval(delay)
+        return "\(message)；自动重试已延后 \(Int(delay / 60)) 分钟"
     }
 
     private func resetAutomationState(cancelDownload: Bool = true) {
@@ -753,8 +786,7 @@ final class UsageExportAutomationService: NSObject, ObservableObject {
         }
 
         if downloadWatchAttempts >= 14 {
-            resetAutomationState()
-            statusMessage = "后台导出超时，本次已跳过，不会打断你当前操作"
+            finishAutomationFailure("后台导出超时，本次已跳过，不会打断你当前操作")
         }
     }
 
@@ -766,7 +798,8 @@ final class UsageExportAutomationService: NSObject, ObservableObject {
             object: UsageExportDownloadEvent(
                 taskID: task.id,
                 fileURL: fileURL,
-                referenceDate: task.referenceDate
+                referenceDate: task.referenceDate,
+                isManual: task.isManual
             )
         )
     }
@@ -1063,8 +1096,7 @@ final class UsageExportAutomationService: NSObject, ObservableObject {
 
         guard Self.isZIPArchiveData(data) else {
             let reason = exportFailureMessage(from: data) ?? "服务器返回的内容不是有效 ZIP"
-            resetAutomationState()
-            statusMessage = "DeepSeek 导出失败：\(reason)"
+            finishAutomationFailure("DeepSeek 导出失败：\(reason)")
             lastDownloadFileName = nil
             return
         }
@@ -1302,9 +1334,12 @@ extension UsageExportAutomationService: WKNavigationDelegate, WKUIDelegate, WKDo
         }
 
         if let reason = downloadedArchiveFailureReason(at: temporaryDestination) {
+            let shouldBackOff = activeExportTask?.isManual == false
             resetAutomationState(cancelDownload: false)
             try? FileManager.default.removeItem(at: temporaryDestination)
-            statusMessage = "DeepSeek 导出失败：\(reason)"
+            statusMessage = shouldBackOff
+                ? automaticFailureStatus("DeepSeek 导出失败：\(reason)")
+                : "DeepSeek 导出失败：\(reason)"
             lastDownloadFileName = nil
             return
         }

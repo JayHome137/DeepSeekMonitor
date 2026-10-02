@@ -7,6 +7,7 @@ enum UsageAutoImportService {
     private static let failedFolderName = "failed"
     private static let workspaceFolderName = "workspace"
     static let maximumArchiveByteCount = 64 * 1024 * 1024
+    static let maximumFailedImportFileCount = 20
     private static let maximumArchiveEntryCount = 64
     private static let maximumArchivePathByteCount = 1_024
     private static let maximumExtractedFileByteCount = 128 * 1024 * 1024
@@ -295,7 +296,43 @@ enum UsageAutoImportService {
         }
 
         try fileManager.moveItem(at: sourceURL, to: destination)
+        _ = try trimFailedImports(failedFolder: destinationFolder)
         return destination
+    }
+
+    @discardableResult
+    static func trimFailedImports(
+        maximumCount: Int = maximumFailedImportFileCount,
+        failedFolder: URL? = nil
+    ) throws -> Int {
+        let folder = try failedFolder ?? failedFolderURL()
+        guard maximumCount >= 0 else { return 0 }
+        let fileManager = FileManager.default
+        let files = try fileManager.contentsOfDirectory(
+            at: folder,
+            includingPropertiesForKeys: [.isRegularFileKey, .isSymbolicLinkKey, .contentModificationDateKey],
+            options: [.skipsHiddenFiles]
+        ).compactMap { url -> (url: URL, modifiedAt: Date)? in
+            let values = try url.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey, .contentModificationDateKey])
+            guard values.isRegularFile == true,
+                  values.isSymbolicLink != true,
+                  ["zip", "csv"].contains(url.pathExtension.lowercased()) else {
+                return nil
+            }
+            return (url, values.contentModificationDate ?? .distantPast)
+        }.sorted { lhs, rhs in
+            if lhs.modifiedAt == rhs.modifiedAt {
+                return lhs.url.lastPathComponent < rhs.url.lastPathComponent
+            }
+            return lhs.modifiedAt > rhs.modifiedAt
+        }
+
+        var removedCount = 0
+        for entry in files.dropFirst(maximumCount) {
+            try fileManager.removeItem(at: entry.url)
+            removedCount += 1
+        }
+        return removedCount
     }
 
     static func cleanupImportedSources(keeping keepURL: URL?) throws {

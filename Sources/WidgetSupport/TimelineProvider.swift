@@ -126,8 +126,8 @@ struct Provider: TimelineProvider {
         let snapshot = loadSnapshot()
         let entry = entryFromSnapshot(snapshot, isEnabled: snapshot?.isWidgetEnabled ?? isWidgetEnabled())
         // Policy: app controls refresh via WidgetCenter.reloadAllTimelines()
-        // Fallback: auto-refresh after 1 hour
-        let nextRefresh = Calendar.current.date(byAdding: .hour, value: 1, to: Date()) ?? Date()
+        // WidgetKit may throttle reloads; this is only a fallback refresh request.
+        let nextRefresh = Calendar.current.date(byAdding: .minute, value: 10, to: Date()) ?? Date()
         let timeline = Timeline(entries: [entry], policy: .after(nextRefresh))
         completion(timeline)
     }
