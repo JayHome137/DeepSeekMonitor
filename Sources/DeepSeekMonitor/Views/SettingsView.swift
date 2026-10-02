@@ -416,6 +416,8 @@ struct SettingsView: View {
                 .foregroundStyle(isSelected ? Color.white : Color.primary)
                 .clipShape(Capsule())
         }
+        .buttonStyle(.borderless)
+        .fixedSize()
     }
 
     private var panelResidenceSection: some View {
@@ -450,6 +452,8 @@ struct SettingsView: View {
                 .foregroundStyle(isSelected ? Color.white : Color.primary)
                 .clipShape(Capsule())
         }
+        .buttonStyle(.borderless)
+        .fixedSize()
     }
 
     // MARK: - Usage Import
@@ -601,6 +605,8 @@ struct SettingsView: View {
                 .foregroundStyle(isSelected ? Color.white : Color.primary)
                 .clipShape(Capsule())
         }
+        .buttonStyle(.borderless)
+        .fixedSize()
     }
 
     private var cacheSection: some View {
