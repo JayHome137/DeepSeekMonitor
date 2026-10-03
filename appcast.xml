@@ -6,6 +6,15 @@ IMPORTANT: This file was signed by Sparkle. Any modifications to this file requi
     <channel>
         <title>DeepSeekMonitor</title>
         <item>
+            <title>1.6.4</title>
+            <pubDate>Sat, 03 Oct 2026 11:15:18 +0800</pubDate>
+            <link>https://github.com/JayHome137/DeepSeekMonitor/releases/tag/v1.6.4</link>
+            <sparkle:version>40</sparkle:version>
+            <sparkle:shortVersionString>1.6.4</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+            <enclosure url="https://github.com/JayHome137/DeepSeekMonitor/releases/download/v1.6.4/DeepSeekMonitor-v1.6.4.dmg" length="2828664" type="application/octet-stream" sparkle:edSignature="hz46kpDHU93sI6pUOSQy3rezd739kZBvN6DaonOeNHydRaee73SnoklsWUtGsJh8xyioEsEIuYZ9kYSnW195AA=="/>
+        </item>
+        <item>
             <title>1.6.3</title>
             <pubDate>Sat, 03 Oct 2026 02:29:20 +0800</pubDate>
             <link>https://github.com/JayHome137/DeepSeekMonitor/releases/tag/v1.6.3</link>
@@ -23,18 +32,9 @@ IMPORTANT: This file was signed by Sparkle. Any modifications to this file requi
             <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
             <enclosure url="https://github.com/JayHome137/DeepSeekMonitor/releases/download/v1.6.2/DeepSeekMonitor-v1.6.2.dmg" length="2830226" type="application/octet-stream" sparkle:edSignature="ImNSBIuitdEHV5fo7G+0nXNVc1CvjzAtb8UCMEuu7KmIzB02V9/eFMr+vLShmy+wCHzK8oPRK0zOO7hRCTk7Cg=="/>
         </item>
-        <item>
-            <title>1.6.1</title>
-            <pubDate>Thu, 01 Oct 2026 01:39:45 +0800</pubDate>
-            <link>https://github.com/JayHome137/DeepSeekMonitor/releases/tag/v1.6.1</link>
-            <sparkle:version>37</sparkle:version>
-            <sparkle:shortVersionString>1.6.1</sparkle:shortVersionString>
-            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
-            <enclosure url="https://github.com/JayHome137/DeepSeekMonitor/releases/download/v1.6.1/DeepSeekMonitor-v1.6.1.dmg" length="2871210" type="application/octet-stream" sparkle:edSignature="y1JWDCknrSsybqanqjU5LirC9PXPhLyQsUi4QMRVH8N2BsE3q5Dm+fC2x8gtqn9ji2cEwYL1IDq1BquGCC6lAg=="/>
-        </item>
     </channel>
 </rss>
 <!-- sparkle-signatures:
-edSignature: rBXeh3pwXHuz499ZVYQwx2RDmWt+aAbMBanBHCssYHknJSzGC7nubF1aHz5g0qL/zZhT65If1HXS7uvkpx63CA==
+edSignature: 1tOfKYFaZR8R2IhxABwR9LttfcBkllAsB8NuX87hsK32OAnUlYZnV1w+rCRQSNsL6Tmas05h8mGOJRwbv1aNCw==
 length: 2569
 -->
