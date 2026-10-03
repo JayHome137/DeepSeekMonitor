@@ -394,7 +394,7 @@ struct SettingsView: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
 
-            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: 3), alignment: .leading, spacing: 8) {
+            HStack(spacing: 8) {
                 ForEach(intervalOptions, id: \.value) { option in
                     intervalButton(option: option)
                 }
@@ -540,7 +540,7 @@ struct SettingsView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
 
-                LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: 3), alignment: .leading, spacing: 8) {
+                HStack(spacing: 8) {
                     ForEach(exportIntervalOptions, id: \.value) { option in
                         exportIntervalButton(option: option)
                     }
