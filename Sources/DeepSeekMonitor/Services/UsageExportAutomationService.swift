@@ -76,7 +76,7 @@ final class UsageExportAutomationService: NSObject, ObservableObject {
     private static let intervalKey = "usage_export_automation_interval_seconds"
     private static let usageURL = URL(string: "https://platform.deepseek.com/usage")!
     private static let loginURL = URL(string: "https://platform.deepseek.com/sign_in")!
-    private static let defaultAutoExportInterval: TimeInterval = 300
+    private static let defaultAutoExportInterval: TimeInterval = 1800
     private static let maximumDownloadByteCount = UsageAutoImportService.maximumArchiveByteCount
     private static let maximumDataURLCharacterCount =
         ((UsageAutoImportService.maximumArchiveByteCount + 2) / 3) * 4 + 256
@@ -252,9 +252,11 @@ final class UsageExportAutomationService: NSObject, ObservableObject {
         let webView = ensureWebView()
         window?.orderOut(nil)
         statusMessage = "正在后台刷新 DeepSeek 本月用量..."
+        // 不必每次重下整包 JS/CSS：页面自身的接口请求会带 no-cache，
+        // 静态资源走磁盘缓存即可。
         let request = URLRequest(
             url: Self.usageURL,
-            cachePolicy: .reloadIgnoringLocalCacheData,
+            cachePolicy: .useProtocolCachePolicy,
             timeoutInterval: 30
         )
         webView.load(request)
