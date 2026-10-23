@@ -84,6 +84,7 @@ final class UsageExportAutomationService: NSObject, ObservableObject {
     private var timer: Timer?
     private var window: NSWindow?
     private var webView: WKWebView?
+    private var idleTeardownTask: Task<Void, Never>?
     private var pendingExportRequest = false
     private var lastAttemptAt: Date?
     private var activeDownload: WKDownload?
@@ -133,6 +134,37 @@ final class UsageExportAutomationService: NSObject, ObservableObject {
 
     func closeWindow() {
         window?.orderOut(nil)
+        scheduleIdleTeardown(delay: 5)
+    }
+
+    /// WKWebView 的 WebContent 进程只增不减；登录态保存在磁盘上的 `.default()` 数据存储中，
+    /// 因此可以安全地把整棵 WebView 树拆掉，下次导出时重建。
+    func destroyWebView() {
+        idleTeardownTask?.cancel()
+        idleTeardownTask = nil
+
+        guard let webView else { return }
+        webView.stopLoading()
+        webView.navigationDelegate = nil
+        webView.uiDelegate = nil
+        webView.configuration.userContentController
+            .removeScriptMessageHandler(forName: UsageExportScriptMessage.download)
+        window?.contentView = NSView(frame: .zero)
+        window?.orderOut(nil)
+        self.webView = nil
+    }
+
+    private func scheduleIdleTeardown(delay: TimeInterval = 90) {
+        idleTeardownTask?.cancel()
+        idleTeardownTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
+            guard !Task.isCancelled else { return }
+            guard let self else { return }
+            guard self.window?.isVisible != true,
+                  self.activeExportTask == nil,
+                  self.pendingExportRequest == false else { return }
+            self.destroyWebView()
+        }
     }
 
     func openLoginWindow() {
@@ -264,6 +296,7 @@ final class UsageExportAutomationService: NSObject, ObservableObject {
         )
         window.title = "DeepSeek 登录与导出"
         window.isReleasedWhenClosed = false
+        window.delegate = self
         window.center()
         window.contentView = webView
         self.window = window
@@ -759,6 +792,9 @@ final class UsageExportAutomationService: NSObject, ObservableObject {
         if let temporaryDestination {
             try? FileManager.default.removeItem(at: temporaryDestination)
         }
+
+        // 每次导出收尾后准备拆 WebView；下一轮导出会重置状态并重建。
+        scheduleIdleTeardown()
     }
 
     private func beginDownloadWatch(for taskID: UUID) {
@@ -880,7 +916,7 @@ final class UsageExportAutomationService: NSObject, ObservableObject {
           const postBlob = async (blob, filename, taskID) => {
             if (!(blob instanceof Blob) || blob.size > maximumDownloadBytes) return false;
             const capturedTaskID = taskID || window.__deepseekActiveExportTaskID || '';
-            return await new Promise((resolve) => {
+            const posted = await new Promise((resolve) => {
               try {
                 const reader = new FileReader();
                 reader.onloadend = () => {
@@ -893,6 +929,15 @@ final class UsageExportAutomationService: NSObject, ObservableObject {
                 resolve(false);
               }
             });
+            // 导出已经过桥，页面基本不会再需要这些 blob URL；
+            // 不清的话每份 ZIP（最大 64MiB）会永远钉在 WebContent 的 JS 堆里。
+            if (posted && blobStore.size > 0) {
+              blobStore.forEach((_, url) => {
+                try { originalRevokeObjectURL(url); } catch {}
+              });
+              blobStore.clear();
+            }
+            return posted;
           };
 
           const shouldCapture = (url, contentType, disposition) => {
@@ -1179,7 +1224,13 @@ final class UsageExportAutomationService: NSObject, ObservableObject {
     }
 }
 
-extension UsageExportAutomationService: WKNavigationDelegate, WKUIDelegate, WKDownloadDelegate, WKScriptMessageHandler {
+extension UsageExportAutomationService: WKNavigationDelegate, WKUIDelegate, WKDownloadDelegate, WKScriptMessageHandler, NSWindowDelegate {
+    // MARK: - 内存看护
+
+    func windowWillClose(_ notification: Notification) {
+        guard (notification.object as? NSWindow) === window else { return }
+        scheduleIdleTeardown(delay: 5)
+    }
     func webView(
         _ webView: WKWebView,
         decidePolicyFor navigationAction: WKNavigationAction,
@@ -1259,6 +1310,9 @@ extension UsageExportAutomationService: WKNavigationDelegate, WKUIDelegate, WKDo
     }
 
     func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
+        // 进程已死，这个实例不可再用：拆掉，下一轮导出重建。
+        self.webView = nil
+        window?.contentView = NSView(frame: .zero)
         guard activeExportTask != nil else { return }
         finishAutomationFailure("后台页面进程已终止，本次同步已停止")
     }
