@@ -60,12 +60,10 @@ URL.createObjectURL = function(object) {
 
 **登录态不受影响**：`websiteDataStore = .default()` 是磁盘持久化存储，cookie / localStorage 落盘，重建 WebView 不会掉登录；销毁丢掉的只是内存中的 SPA 会话。
 
-### `chore(export)`: 下调默认间隔并复用 HTTP 缓存
+### `chore(export)`: 复用 HTTP 缓存并保持原默认间隔
 
-- 默认导出间隔 300s → 1800s（设置中的可选值列表不变）
+- 默认自动导出间隔保持 300s（5 分钟），设置中的可选值列表不变
 - 导出导航 `cachePolicy` 改为 `.useProtocolCachePolicy`
-
-> `AGENTS.md` 记录了「Existing defaults remain 60 seconds and 5 minutes」这一约定。若需保持原默认值，可只保留前一提交。
 
 ## 不要这样改（已验证的反面结论）
 

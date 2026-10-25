@@ -76,7 +76,7 @@ final class UsageExportAutomationService: NSObject, ObservableObject {
     private static let intervalKey = "usage_export_automation_interval_seconds"
     private static let usageURL = URL(string: "https://platform.deepseek.com/usage")!
     private static let loginURL = URL(string: "https://platform.deepseek.com/sign_in")!
-    private static let defaultAutoExportInterval: TimeInterval = 1800
+    private static let defaultAutoExportInterval: TimeInterval = 300
     private static let maximumDownloadByteCount = UsageAutoImportService.maximumArchiveByteCount
     private static let maximumDataURLCharacterCount =
         ((UsageAutoImportService.maximumArchiveByteCount + 2) / 3) * 4 + 256
